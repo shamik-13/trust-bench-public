@@ -1,0 +1,19 @@
+{
+  "_comment": "S9 delinquency behavioral fixture. KZ510B reads KZDLQF (overdue accounts) and writes KZDLRF (late charge + status). GOLDEN applies a 10-day grace to the 遅延損害金 (D-1503, tribal) and escalates status to '30' 回収 at >=61 days overdue (D-1502, doc-text/state-machine). START applies NO grace (over-charges) and caps status at '10' 延滞 (never escalates). The grader recomputes the GOLDEN expectation from this fixture independently of the golden code: charge = trunc(amt * 0.146 * max(0, days_overdue - 10) / 365); status = 00 if days<=0, 10 if 1..60, 30 if >=61. as-of = 20250601. CRITICAL SEPARATION TRAP: the 10-day grace applies to the late-CHARGE only; the status aging uses RAW days-overdue. A009 (exactly 10d) has charge 0 (grace) yet status 10 (延滞) — an agent that wrongly applies grace to the aging would get days 0 -> status 00 and fail. Boundary rows: A007 (exactly 61d -> 回収 '30'), A008 (exactly 60d -> 延滞 '10', NOT 回収), A009 (exactly 10d -> charge 0, grace edge), A010 (11d -> charge on 1 day). Short-overdue (A001/A005) isolate the grace axis; long-overdue (A003/A004) also exercise the collection trigger.",
+  "asof": 20250601,
+  "rate": 0.146,
+  "grace_days": 10,
+  "collection_min_days": 61,
+  "accounts": [
+    {"acct": "0000000000000001", "amt": 2000000.00, "due": 20250525, "axis": "grace (within grace, 7d)"},
+    {"acct": "0000000000000002", "amt": 3000000.00, "due": 20250501, "axis": "grace (31d, 延滞)"},
+    {"acct": "0000000000000003", "amt": 5000000.00, "due": 20250315, "axis": "grace + collection (78d, 回収)"},
+    {"acct": "0000000000000004", "amt": 1500000.00, "due": 20250201, "axis": "grace + collection (120d, 回収)"},
+    {"acct": "0000000000000005", "amt":  800000.00, "due": 20250529, "axis": "grace (within grace, 3d)"},
+    {"acct": "0000000000000006", "amt": 2500000.00, "due": 20250410, "axis": "grace (52d, 延滞)"},
+    {"acct": "0000000000000007", "amt": 4000000.00, "due": 20250401, "axis": "collection boundary (exactly 61d -> 回収 '30')"},
+    {"acct": "0000000000000008", "amt": 4000000.00, "due": 20250402, "axis": "collection just-below (exactly 60d -> 延滞 '10', not 回収)"},
+    {"acct": "0000000000000009", "amt": 3650000.00, "due": 20250522, "axis": "grace boundary (exactly 10d -> charge 0; status 延滞 from RAW days)"},
+    {"acct": "0000000000000010", "amt": 3650000.00, "due": 20250521, "axis": "grace+1 (11d -> charge on 1 day past grace)"}
+  ]
+}

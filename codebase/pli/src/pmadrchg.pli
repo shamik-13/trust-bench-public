@@ -1,0 +1,155 @@
+   /*================================================================*/
+   /*  変更履歴                                                      */
+   /*  版数   年月日    担当          概要                            */
+   /*  1.0    2025/02   山田太郎      初版 - 住所変更処理バッチ      */
+   /*================================================================*/
+
+   pmadrchg: PROC OPTIONS(MAIN);
+
+   /* ============================================================== */
+   /* 住所変更処理バッチ - PMADRCHG                                  */
+   /* プログラム概要:                                               */
+   /*   契約の住所変更要求を読込み、契約状態を検証して              */
+   /*   住所変更履歴(LFADRH)と変更マスター履歴(LFCMNH)を作成する。  */
+   /* ============================================================== */
+
+   %INCLUDE LFCONFC;      /* 契約マスターレコード定義 */
+   %INCLUDE LFADRHC;      /* 住所変更履歴レコード定義 */
+   %INCLUDE LFCMNHC;      /* 変更マスター履歴レコード定義 */
+
+   DCL (IN_FILE, CONF_FILE, ADRH_FILE, CMNH_FILE) FILE;
+
+   /* 入力ファイルレコード構造 */
+   DCL 1 INPUT_REC,
+       2 INP_CON_NO         PIC'9(10)',
+       2 INP_CHG_DT         PIC'9(8)',
+       2 INP_OPE_ID         PIC'9(6)',
+       2 INP_NEW_POSTAL     CHAR(7),
+       2 INP_NEW_ADDR_KN    CHAR(50),
+       2 INP_NEW_ADDR_HN    CHAR(50),
+       2 INP_NEW_ADDR_BN    CHAR(50);
+
+   /* ワーク変数 */
+   DCL WK_CON_NO           FIXED DEC(10,0);
+   DCL WK_OLD_POSTAL       CHAR(7);
+   DCL WK_OLD_ADDR_KN      CHAR(50);
+   DCL WK_OLD_ADDR_HN      CHAR(50);
+   DCL WK_OLD_ADDR_BN      CHAR(50);
+   DCL WK_CHG_DT           FIXED DEC(8,0);
+   DCL WK_OPE_ID           FIXED DEC(6,0);
+   DCL WK_STATUS_KBN       CHAR(2);
+   DCL WK_EOF_FLG          CHAR(1) INIT('0');
+   DCL WK_ERR_FLG          CHAR(1) INIT('0');
+   DCL WK_INPUT_CNT        FIXED DEC(9,0) INIT(0);
+   DCL WK_OUTPUT_CNT       FIXED DEC(9,0) INIT(0);
+   DCL WK_ERR_CNT          FIXED DEC(9,0) INIT(0);
+
+   /* ファイル入出力 */
+   ON ENDFILE(IN_FILE) 
+      WK_EOF_FLG = '1';
+
+   ON ENDFILE(CONF_FILE)
+   BEGIN;
+      WK_ERR_FLG = '1';
+      WK_ERR_CNT = WK_ERR_CNT + 1;
+      GOTO SKIP_RECORD;
+   END;
+
+   ON ERROR(IN_FILE)
+   BEGIN;
+      WK_ERR_FLG = '1';
+      WK_ERR_CNT = WK_ERR_CNT + 1;
+      GOTO SKIP_RECORD;
+   END;
+
+   OPEN FILE(IN_FILE)  INPUT;
+   OPEN FILE(CONF_FILE) INPUT;
+   OPEN FILE(ADRH_FILE) OUTPUT;
+   OPEN FILE(CMNH_FILE) OUTPUT;
+
+   DO WHILE(WK_EOF_FLG = '0');
+      READ FILE(IN_FILE) INTO(INPUT_REC);
+      IF WK_EOF_FLG = '1' THEN LEAVE;
+
+      WK_INPUT_CNT = WK_INPUT_CNT + 1;
+      WK_ERR_FLG = '0';
+
+      /* 入力データをワーク領域へ格納 */
+      WK_CON_NO = INP_CON_NO;
+      WK_CHG_DT = INP_CHG_DT;
+      WK_OPE_ID = INP_OPE_ID;
+
+      /* 契約マスターから現在の住所を読込む */
+      READ FILE(CONF_FILE) KEY(WK_CON_NO) INTO(LFCONF_REC);
+
+      /* 契約状態チェック */
+      WK_STATUS_KBN = LFCONF_REC.CON_STATUS_KBN;
+
+      IF WK_STATUS_KBN = '90' OR WK_STATUS_KBN = '99' THEN
+      BEGIN;
+         /* 解約・キャンセル済みは処理対象外 */
+         WK_ERR_CNT = WK_ERR_CNT + 1;
+         GOTO SKIP_RECORD;
+      END;
+
+      /* 現在の住所をワークに保存 */
+      WK_OLD_POSTAL = LFCONF_REC.POSTAL_CODE;
+      WK_OLD_ADDR_KN = LFCONF_REC.ADDR_KN;
+      WK_OLD_ADDR_HN = LFCONF_REC.ADDR_HN;
+      WK_OLD_ADDR_BN = LFCONF_REC.ADDR_BN;
+
+      /* 住所変更履歴(LFADRH)レコードを作成・書込 */
+      LFADRH_REC.CON_NO = WK_CON_NO;
+      LFADRH_REC.CHG_DT = WK_CHG_DT;
+      LFADRH_REC.OLD_POSTAL = WK_OLD_POSTAL;
+      LFADRH_REC.OLD_ADDR_KN = WK_OLD_ADDR_KN;
+      LFADRH_REC.OLD_ADDR_HN = WK_OLD_ADDR_HN;
+      LFADRH_REC.OLD_ADDR_BN = WK_OLD_ADDR_BN;
+      LFADRH_REC.NEW_POSTAL = INP_NEW_POSTAL;
+      LFADRH_REC.NEW_ADDR_KN = INP_NEW_ADDR_KN;
+      LFADRH_REC.NEW_ADDR_HN = INP_NEW_ADDR_HN;
+      LFADRH_REC.NEW_ADDR_BN = INP_NEW_ADDR_BN;
+      LFADRH_REC.OPE_ID = WK_OPE_ID;
+      LFADRH_REC.CREA_DT = WK_CHG_DT;
+
+      WRITE FILE(ADRH_FILE) FROM(LFADRH_REC);
+
+      /* 変更マスター履歴(LFCMNH)レコードを作成・書込 */
+      LFCMNH_REC.CON_NO = WK_CON_NO;
+      LFCMNH_REC.CHG_SEQ = 0;  /* SEQ自動採番はDB側 */
+      LFCMNH_REC.CHG_DT = WK_CHG_DT;
+      LFCMNH_REC.CHG_TYPE_KBN = 'AD';    /* 住所変更 */
+      LFCMNH_REC.CHG_ITEM_KBN = 'ADR';   /* 住所 */
+      LFCMNH_REC.OLD_VALUE = WK_OLD_POSTAL;
+      LFCMNH_REC.NEW_VALUE = INP_NEW_POSTAL;
+      LFCMNH_REC.OPE_ID = WK_OPE_ID;
+      LFCMNH_REC.CREA_DT = WK_CHG_DT;
+
+      WRITE FILE(CMNH_FILE) FROM(LFCMNH_REC);
+
+      WK_OUTPUT_CNT = WK_OUTPUT_CNT + 1;
+
+      SKIP_RECORD:
+         /* スキップ処理 */
+         ;
+
+   END;
+
+   /* ファイルをクローズ */
+   CLOSE FILE(IN_FILE);
+   CLOSE FILE(CONF_FILE);
+   CLOSE FILE(ADRH_FILE);
+   CLOSE FILE(CMNH_FILE);
+
+   /* 処理結果の表示(コンソール出力またはログ) */
+   DISPLAY '住所変更処理バッチ完了:';
+   DISPLAY '入力件数:' WK_INPUT_CNT;
+   DISPLAY '出力件数:' WK_OUTPUT_CNT;
+   DISPLAY 'エラー件数:' WK_ERR_CNT;
+
+   IF WK_ERR_CNT > 0 THEN
+      STOP RUN 1;
+   ELSE
+      STOP RUN 0;
+
+   END pmadrchg;

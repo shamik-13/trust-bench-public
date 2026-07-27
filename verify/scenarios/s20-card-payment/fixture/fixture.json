@@ -1,0 +1,13 @@
+{
+  "_comment": "消込 fixture. Allocation order fee->interest->principal (GOLDEN) vs principal-first (START). When a payment is smaller than total outstanding, the applied-per-component split differs -> discriminates. PAY002 fully covers (overpay) -> same in both (control). expect_* = GOLDEN. amounts in yen; gen_text x100.",
+  "outstanding": [
+    {"card_no": "4501000000000001", "fee": 3000,  "interest": 5000, "principal": 100000, "cycle_dt": "20260531"},
+    {"card_no": "4501000000000002", "fee": 1000,  "interest": 2000, "principal": 50000,  "cycle_dt": "20260531"},
+    {"card_no": "4501000000000003", "fee": 4000,  "interest": 1000, "principal": 20000,  "cycle_dt": "20260531"}
+  ],
+  "payments": [
+    {"pay_id": "PAY0000001", "card_no": "4501000000000001", "amount": 6000,  "pay_dt": "20260610", "method": "10", "expect_fee": 3000, "expect_int": 3000, "expect_prin": 0,     "expect_status": "P"},
+    {"pay_id": "PAY0000002", "card_no": "4501000000000002", "amount": 60000, "pay_dt": "20260610", "method": "20", "expect_fee": 1000, "expect_int": 2000, "expect_prin": 50000, "expect_status": "O"},
+    {"pay_id": "PAY0000003", "card_no": "4501000000000003", "amount": 4500,  "pay_dt": "20260610", "method": "30", "expect_fee": 4000, "expect_int": 500,  "expect_prin": 0,     "expect_status": "P"}
+  ]
+}

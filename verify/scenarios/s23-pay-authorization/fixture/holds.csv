@@ -1,0 +1,14 @@
+# wallet_id,amt,result,exp_dt,ccy   (result HD-HOLD-RESULT; exp_dt YYYYMMDD; as-of=20260601)
+# W1: one ACTIVE (exp 20260630) + one EXPIRED (exp 20260501 -> released in golden, subtracted in start)
+W1,3000,00,20260630,JPY
+W1,2000,00,20260501,JPY
+# W2: one active + one cancelled (ignored both)
+W2,1000,00,20260630,JPY
+W2,4000,20,20260630,JPY
+# W3: one active
+W3,500,00,20260630,JPY
+# W5: as-of-boundary active (exp == as-of -> counted under `<`, wrongly released under `<=`)
+#     + non-JPY active (excluded by ccy) + expired (released by golden, subtracted by start)
+W5,4000,00,20260601,JPY
+W5,5000,00,20260630,USD
+W5,3000,00,20260501,JPY

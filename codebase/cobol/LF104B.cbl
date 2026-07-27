@@ -1,0 +1,58 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LF104B.
+
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT LFPOL-FILE ASSIGN TO "LFPOL.DAT"
+               ORGANIZATION IS LINE SEQUENTIAL
+               FILE STATUS IS WS-LFPOL-STATUS.
+           SELECT LFCNT-FILE ASSIGN TO "LFCNT.DAT"
+               ORGANIZATION IS LINE SEQUENTIAL
+               FILE STATUS IS WS-LFCNT-STATUS.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  LFPOL-FILE.
+       COPY LFPOLFC.
+       FD  LFCNT-FILE.
+       COPY LFCNTFC.
+
+       WORKING-STORAGE SECTION.
+       01  WS-LFPOL-STATUS        PIC XX VALUE SPACES.
+       01  WS-LFCNT-STATUS        PIC XX VALUE SPACES.
+       01  WS-END-OF-FILE         PIC X VALUE "N".
+           88  END-OF-FILE              VALUE "Y".
+           88  NOT-END-OF-FILE          VALUE "N".
+       01  WS-LFPOL-COUNT         PIC 9(9) VALUE ZERO.
+
+       PROCEDURE DIVISION.
+       MAIN-LOGIC.
+           OPEN INPUT LFPOL-FILE
+           IF WS-LFPOL-STATUS NOT = "00"
+               DISPLAY "LFPOL OPEN FAILED: " WS-LFPOL-STATUS
+               STOP RUN
+           END-IF
+
+           SET NOT-END-OF-FILE TO TRUE
+           PERFORM UNTIL END-OF-FILE
+               READ LFPOL-FILE
+                   AT END
+                       SET END-OF-FILE TO TRUE
+                   NOT AT END
+                       ADD 1 TO WS-LFPOL-COUNT
+               END-READ
+           END-PERFORM
+
+           CLOSE LFPOL-FILE
+
+           OPEN OUTPUT LFCNT-FILE
+           IF WS-LFCNT-STATUS NOT = "00"
+               DISPLAY "LFCNT OPEN FAILED: " WS-LFCNT-STATUS
+               STOP RUN
+           END-IF
+
+           DISPLAY "LFPOL RECORDS READ: " WS-LFPOL-COUNT
+
+           CLOSE LFCNT-FILE
+           STOP RUN.

@@ -1,0 +1,9 @@
+       // CDLOGFC -- CDLOGF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdlogf_rec qualified;
+         lg_log_id          char(10);
+         lg_program_id      char(10);
+         lg_card_no         char(16);
+         lg_event_kbn       char(2);
+         lg_event_dt        packed(8:0);
+         lg_detail_cd       char(10);
+       end-ds;

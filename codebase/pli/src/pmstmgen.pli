@@ -1,0 +1,236 @@
+/*==================================================================*/
+/*  PMSTMGEN - 契約照会書生成バッチ                                    */
+/*  目的: 年度末契約照会書を生成し、郵便番号でソート                    */
+/*                                                                  */
+/*  変更履歴                                                        */
+/*  版数  年月日    担当      概要                                  */
+/*  1.0   2024/04  宮本      初版作成                              */
+/*  1.1   2024/12  田中      配当条件の追加（LFDIVF読込判定）       */
+/*  1.2   2025/06  佐藤      入金区分による送付判定追加              */
+/*==================================================================*/
+
+PMSTMGEN: PROC OPTIONS(MAIN);
+
+   DCL SYSPRINT   FILE SEQUENTIAL OUTPUT;
+   DCL SYSIN      FILE SEQUENTIAL INPUT;
+   DCL LFCONF_F   FILE SEQUENTIAL INPUT;
+   DCL LFLAPF_F   FILE SEQUENTIAL INPUT;
+   DCL LFPLNF_F   FILE SEQUENTIAL INPUT;
+   DCL LFDIVF_F   FILE SEQUENTIAL INPUT;
+   DCL LFSTMF_F   FILE SEQUENTIAL OUTPUT;
+   DCL WORK_SORT  FILE SEQUENTIAL OUTPUT;
+
+   %INCLUDE LFCONFC;
+   %INCLUDE LFLAPFC;
+   %INCLUDE LFPLNFC;
+   %INCLUDE LFDIVF2C;
+   %INCLUDE LFSTMFC;
+
+   DCL 01 WORK_AREA,
+      05 WK-PROC-DATE            PIC '9(8)',
+      05 WK-PROC-DATE-BIN         FIXED BIN(31),
+      05 WK-FISCAL-YEAR-END       PIC '9(8)',
+      05 WK-FISCAL-YEAR           FIXED DEC(4,0),
+      05 WK-RETURN-CODE           FIXED DEC(4,0),
+      05 WK-ERR-MSG               CHAR(100),
+      05 WK-REC-COUNT             FIXED DEC(9,0) INIT(0),
+      05 WK-ERR-COUNT             FIXED DEC(9,0) INIT(0),
+      05 WK-EOF-SW                CHAR(1) INIT('N'),
+      05 WK-LFDIV-SW              CHAR(1) INIT('N'),
+      05 WK-LOAN-INT-AMT          FIXED DEC(11,2) INIT(0),
+      05 WK-LOAN-PRIN-AMT         FIXED DEC(11,2) INIT(0),
+      05 WK-DIVIDEND-AMT          FIXED DEC(11,2) INIT(0),
+      05 WK-PREM-PAY-YEN          FIXED DEC(11,2) INIT(0),
+      05 WK-STAT-ACCRUAL-DAYS     FIXED DEC(5,0),
+      05 WK-LAST-POSTAL-CD        CHAR(7) INIT(SPACES),
+      05 WK-CURR-POSTAL-CD        CHAR(7),
+      05 WK-ACCRUAL-YYYYMM        CHAR(6),
+      05 WK-ACCRUAL-DD            CHAR(2);
+
+   DCL 01 LFSTM_BUFFER,
+      05 LFSTM-POLICY-NO          CHAR(10),
+      05 LFSTM-POSTAL-CODE        CHAR(7),
+      05 LFSTM-STATEMENT-DATE     PIC '9(8)',
+      05 LFSTM-SORT-KEY           CHAR(17);
+
+   DCL 01 CONTROL_PARMS,
+      05 CP-PMPLNINT-POLICY       CHAR(10),
+      05 CP-PMPLNINT-LOAN-TYPE    CHAR(2),
+      05 CP-PMPLNINT-INT-DAYS     FIXED DEC(5,0),
+      05 CP-PMPLNINT-INT-AMOUNT   FIXED DEC(11,2),
+      05 CP-PMDIVCLC-POLICY       CHAR(10),
+      05 CP-PMDIVCLC-FISCAL-YR    FIXED DEC(4,0),
+      05 CP-PMDIVCLC-DIV-AMOUNT   FIXED DEC(11,2);
+
+   /* === ファイルOPEN === */
+   OPEN FILE(LFCONF_F) INPUT;
+   OPEN FILE(LFLAPF_F) INPUT;
+   OPEN FILE(LFPLNF_F) INPUT;
+   OPEN FILE(LFDIVF_F) INPUT;
+   OPEN FILE(LFSTMF_F) OUTPUT;
+   OPEN FILE(WORK_SORT) OUTPUT;
+
+   ON ENDFILE(LFCONF_F)
+      BEGIN;
+         WK-EOF-SW = 'Y';
+      END;
+
+   ON ERROR(LFCONF_F)
+      BEGIN;
+         WK-ERR-MSG = '契約マスタファイル読込エラー';
+         WK-ERR-COUNT = WK-ERR-COUNT + 1;
+      END;
+
+   /* === 当年度末日の設定: 2026/03/31 === */
+   WK-FISCAL-YEAR-END = '20260331';
+   WK-FISCAL-YEAR = 2025;
+
+   /* === 契約マスタ主ループ === */
+   DO WHILE(WK-EOF-SW = 'N');
+
+      READ FILE(LFCONF_F) INTO(LFCONF_REC);
+
+      IF WK-EOF-SW = 'Y' THEN
+         LEAVE;
+
+      WK-REC-COUNT = WK-REC-COUNT + 1;
+
+      /* === 契約状態の事前判定 === */
+      /* 状態コード 01=有効, 03=猶予中, 05=失効, 07=復活 */
+      IF CON-STATUS-KBN ^= '01' & CON-STATUS-KBN ^= '03' & 
+         CON-STATUS-KBN ^= '07' THEN
+         ITERATE;
+
+      /* === LFLAPF (失効猶予/復活可能期限) 条件読込 === */
+      /* 状態が 30(旧: 猶予中) or 40(旧: 復活可能) の場合 */
+      IF CON-STATUS-KBN = '03' | CON-STATUS-KBN = '07' THEN
+         BEGIN;
+            SEEK FILE(LFLAPF_F) KEY(POLICY-NO-K);
+            READ FILE(LFLAPF_F) INTO(LFLAPF_REC);
+            /* エラーハンドリングは省略 */
+         END;
+
+      /* === ローン残高・利息計算 === */
+      WK-LOAN-INT-AMT = 0;
+      WK-LOAN-PRIN-AMT = 0;
+
+      SEEK FILE(LFPLNF_F) KEY(POLICY-NO-K);
+      READ FILE(LFPLNF_F) INTO(LFPLN_REC);
+
+      IF LF-LOAN-PRINCIPAL > 0 THEN
+         BEGIN;
+            CP-PMPLNINT-POLICY = POLICY-NO;
+            CP-PMPLNINT-LOAN-TYPE = LF-LOAN-TYPE;
+            CP-PMPLNINT-INT-DAYS = WK-STAT-ACCRUAL-DAYS;
+
+            CALL PMPLNINT(CP-PMPLNINT-POLICY, 
+                         CP-PMPLNINT-LOAN-TYPE,
+                         CP-PMPLNINT-INT-DAYS,
+                         CP-PMPLNINT-INT-AMOUNT);
+
+            WK-LOAN-INT-AMT = CP-PMPLNINT-INT-AMOUNT;
+            WK-LOAN-PRIN-AMT = LF-LOAN-PRINCIPAL;
+         END;
+
+      /* === 配当金の算出 === */
+      WK-DIVIDEND-AMT = 0;
+      WK-LFDIV-SW = 'N';
+
+      SEEK FILE(LFDIVF_F) KEY(POLICY-NO-K);
+      READ FILE(LFDIVF_F) INTO(LFDIV_REC);
+
+      IF LFDIV-REC-FOUND = '1' THEN
+         BEGIN;
+            WK-DIVIDEND-AMT = LFDIV-AMOUNT;
+            WK-LFDIV-SW = 'Y';
+         END;
+      ELSE
+         BEGIN;
+            /* 配当計算処理が未実施の場合は実行 */
+            CP-PMDIVCLC-POLICY = POLICY-NO;
+            CP-PMDIVCLC-FISCAL-YR = WK-FISCAL-YEAR;
+
+            CALL PMDIVCLC(CP-PMDIVCLC-POLICY,
+                         CP-PMDIVCLC-FISCAL-YR,
+                         CP-PMDIVCLC-DIV-AMOUNT);
+
+            WK-DIVIDEND-AMT = CP-PMDIVCLC-DIV-AMOUNT;
+            WK-LFDIV-SW = 'Y';
+         END;
+
+      /* === 保険料払込方法別の年間保険料計算 === */
+      WK-PREM-PAY-YEN = 0;
+      IF CN-PAY-MODE-KBN = 'M' THEN
+         WK-PREM-PAY-YEN = CN-MONTHLY-PREM * 12;
+      ELSE IF CN-PAY-MODE-KBN = 'Y' THEN
+         WK-PREM-PAY-YEN = CN-ANNUAL-PREM;
+
+      /* === 入金区分の判定: 1=入金済、0=未入金 === */
+      IF CN-PAID-KBN ^= '1' THEN
+         ITERATE;
+
+      /* === 照会書レコードの構築 === */
+      LFSTM-POLICY-NO = POLICY-NO;
+      LFSTM-POSTAL-CODE = CN-POSTAL-CODE;
+      LFSTM-STATEMENT-DATE = WK-FISCAL-YEAR-END;
+
+      STM-TYPE-KBN = 'AN';           /* 年度末照会書 */
+      STM-POLICY-NO = POLICY-NO;
+      STM-POSTAL-CODE = CN-POSTAL-CODE;
+      STM-STATEMENT-DATE = WK-FISCAL-YEAR-END;
+      STM-CON-STATUS-KBN = CON-STATUS-KBN;
+      STM-ANNUAL-PREM = WK-PREM-PAY-YEN;
+      STM-LOAN-PRINCIPAL = WK-LOAN-PRIN-AMT;
+      STM-ACCRUED-INTEREST = WK-LOAN-INT-AMT;
+      STM-DIVIDEND-AMOUNT = WK-DIVIDEND-AMT;
+      STM-PREM-PAY-MODE = CN-PAY-MODE-KBN;
+
+      /* ソートキー: 郵便番号 + ポリシー番号 */
+      LFSTM-SORT-KEY = LFSTM-POSTAL-CODE || LFSTM-POLICY-NO;
+
+      WRITE FILE(WORK_SORT) FROM(LFSTM_BUFFER);
+
+   END; /* END DO WHILE ループ */
+
+   CLOSE FILE(LFCONF_F);
+   CLOSE FILE(LFLAPF_F);
+   CLOSE FILE(LFPLNF_F);
+   CLOSE FILE(LFDIVF_F);
+   CLOSE FILE(WORK_SORT);
+
+   /* === ソート処理（郵便番号昇順） === */
+   /* 外部ソートユーティリティ呼出（DFSORT / SYNソート） */
+   /* ここでは簡易的に再度読込処理を行なう */
+
+   OPEN FILE(WORK_SORT) INPUT;
+   OPEN FILE(LFSTMF_F) OUTPUT;
+
+   ON ENDFILE(WORK_SORT)
+      BEGIN;
+         WK-EOF-SW = 'Y';
+      END;
+
+   WK-EOF-SW = 'N';
+
+   DO WHILE(WK-EOF-SW = 'N');
+
+      READ FILE(WORK_SORT) INTO(LFSTM_BUFFER);
+
+      IF WK-EOF-SW = 'Y' THEN
+         LEAVE;
+
+      WRITE FILE(LFSTMF_F) FROM(LFSTM_REC);
+
+   END; /* END ソート後出力ループ */
+
+   CLOSE FILE(WORK_SORT);
+   CLOSE FILE(LFSTMF_F);
+
+   /* === 処理統計の出力 === */
+   PUT SKIP LIST('===== 契約照会書生成バッチ 処理完了 =====');
+   PUT SKIP LIST('処理件数: ' || WK-REC-COUNT);
+   PUT SKIP LIST('エラー件数: ' || WK-ERR-COUNT);
+
+   STOP RUN;
+
+END PMSTMGEN;

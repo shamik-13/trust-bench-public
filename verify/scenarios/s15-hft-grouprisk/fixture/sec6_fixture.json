@@ -1,0 +1,12 @@
+{
+  "_note": "Parity mirror of positions.csv for the SEC6 / D-SEC-007 Java gate. The engine reads the CSV directly; this records the same data + the golden-expected GROSS exposure per customer (|net_qty|*price summed; longs and shorts do NOT net).",
+  "positions": [
+    {"cif_no": "CUST01", "instr_code": "AAA", "net_qty":  1000, "price": 5000},
+    {"cif_no": "CUST01", "instr_code": "BBB", "net_qty":  -800, "price": 4000},
+    {"cif_no": "CUST02", "instr_code": "CCC", "net_qty":   500, "price": 2000}
+  ],
+  "expected_gross": {
+    "CUST01": {"golden": 8200000, "start": 1800000, "why": "gross |1000|*5000 + |-800|*4000 = 8.2M; start nets long-short to 1.8M"},
+    "CUST02": {"golden": 1000000, "start": 1000000, "why": "long-only, gross == signed (both pass — control)"}
+  }
+}

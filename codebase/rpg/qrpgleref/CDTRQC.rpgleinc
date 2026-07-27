@@ -1,0 +1,11 @@
+       // CDTRQC -- CDTRQF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdtrqf_rec qualified;
+         trq_request_id     char(10);
+         trq_card_no        char(16);
+         trq_billing_cycle_dt packed(8:0);
+         trq_request_amt    packed(13:2);
+         trq_due_dt         packed(8:0);
+         trq_bank_cd        char(10);
+         trq_account_no     char(16);
+         trq_request_status char(2);
+       end-ds;

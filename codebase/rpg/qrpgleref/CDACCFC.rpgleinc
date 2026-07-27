@@ -1,0 +1,11 @@
+       // CDACCFC -- CDACCF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdaccf_rec qualified;
+         ac_card_no         char(16);
+         ac_member_id       char(10);
+         ac_status_kbn      char(2);
+         ac_credit_limit    packed(13:2);
+         ac_cash_limit      packed(13:2);
+         ac_used_amt        packed(13:2);
+         ac_delay_kbn       char(2);
+         ac_last_upd_dt     packed(8:0);
+       end-ds;

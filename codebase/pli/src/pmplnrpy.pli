@@ -1,0 +1,286 @@
+/*----------------------------------------------------------------------*/
+/*  プログラム名: PMPLNRPY                                             */
+/*  プログラム説明: 契約者貸付返済処理バッチ                           */
+/*  システム名: みらい生命 契約保全システム                            */
+/*----------------------------------------------------------------------*/
+/*  変更履歴:                                                          */
+/*  版数  年月日      担当         概要                                */
+/*  ----  ----------  -----------  ---------------------------------- */
+/*  1.0   2023/11/28  田中太郎     初版 - 貸付返済処理               */
+/*  1.1   2024/06/15  鈴木花子     利息端数処理修正                  */
+/*  1.2   2024/11/20  佐藤次郎     返済済フラグロジック見直し        */
+/*  2.0   2025/02/10  加藤美咲     負債マスタリンク追加              */
+/*----------------------------------------------------------------------*/
+
+ PMPLNRPY: PROC OPTIONS(MAIN);
+
+ /*----------------------------------------------------------------------*/
+ /* ファイル宣言                                                         */
+ /*----------------------------------------------------------------------*/
+    DCL LFPLNF_IN   FILE SEQUENTIAL INPUT RECORD;
+    DCL LFPAYF_IN   FILE SEQUENTIAL INPUT RECORD;
+    DCL LFPLNF_OUT  FILE SEQUENTIAL OUTPUT RECORD;
+    DCL LFPAYF_OUT  FILE SEQUENTIAL OUTPUT RECORD;
+    DCL ERRLOG      FILE SEQUENTIAL OUTPUT RECORD;
+
+ /*----------------------------------------------------------------------*/
+ /* グローバルワーク領域                                                 */
+ /*----------------------------------------------------------------------*/
+    DCL RC              FIXED DEC(4) INIT(0);
+    DCL EOF_LFPLNF      BIT(1) INIT('0'B);
+    DCL EOF_LFPAYF      BIT(1) INIT('0'B);
+    DCL MATCH_FLG       BIT(1) INIT('0'B);
+
+    DCL PROC_CNT        FIXED DEC(9) VALUE(0);
+    DCL SUCC_CNT        FIXED DEC(9) VALUE(0);
+    DCL SKIP_CNT        FIXED DEC(9) VALUE(0);
+    DCL ERR_CNT         FIXED DEC(9) VALUE(0);
+
+    DCL PROC_DT         PIC '9(8)' INIT('20250220');
+    DCL WORK_DT         PIC '9(8)';
+    DCL WORK_PLN_ID     CHAR(12);
+    DCL WORK_PAY_ID     CHAR(12);
+    DCL MSG_BUF         CHAR(150);
+
+ /*----------------------------------------------------------------------*/
+ /* 金額ワーク領域                                                       */
+ /*----------------------------------------------------------------------*/
+    DCL PMT_AMT_IN      FIXED DEC(15,2) INIT(0);
+    DCL INT_ACCRUAL     FIXED DEC(15,2) INIT(0);
+    DCL INT_REMAIN      FIXED DEC(15,2) INIT(0);
+    DCL PRC_REMAIN      FIXED DEC(15,2) INIT(0);
+    DCL PMT_TO_INT      FIXED DEC(15,2) INIT(0);
+    DCL PMT_TO_PRC      FIXED DEC(15,2) INIT(0);
+    DCL ROUND_DIFF      FIXED DEC(15,2) INIT(0);
+
+ /*----------------------------------------------------------------------*/
+ /* レコード領域                                                         */
+ /*----------------------------------------------------------------------*/
+    %INCLUDE 'LFPLNFC';    /* 貸付元本マスタ */
+    %INCLUDE 'LFPAYF2C';   /* 返済実績ファイル */
+
+    DCL LFPLNF_REC_SAV LIKE LFPLNF_REC;
+    DCL LFPAYF_REC_SAV LIKE LFPAYF2_REC;
+
+ /*----------------------------------------------------------------------*/
+ /* エラーハンドリング設定                                               */
+ /*----------------------------------------------------------------------*/
+    ON ENDFILE(LFPAYF_IN)
+       EOF_LFPAYF = '1'B;
+
+    ON ENDFILE(LFPLNF_IN)
+       EOF_LFPLNF = '1'B;
+
+    ON RECORD ERROR(LFPLNF_IN, LFPAYF_IN)
+    BEGIN;
+       ERR_CNT = ERR_CNT + 1;
+       MSG_BUF = 'レコード読込エラーが発生しました。処理を中断します。';
+       CALL WRITE_ERR(MSG_BUF);
+       GOTO PROC_END;
+    END;
+
+ /*----------------------------------------------------------------------*/
+ /* ファイルOPEN処理                                                     */
+ /*----------------------------------------------------------------------*/
+    OPEN FILE(LFPLNF_IN) INPUT;
+    OPEN FILE(LFPAYF_IN) INPUT;
+    OPEN FILE(LFPLNF_OUT) OUTPUT;
+    OPEN FILE(LFPAYF_OUT) OUTPUT;
+    OPEN FILE(ERRLOG) OUTPUT;
+
+    CALL WRITE_LOG('====== 貸付返済処理バッチ 開始 ======');
+    CALL WRITE_LOG('処理日付: ' || PROC_DT);
+
+ /*----------------------------------------------------------------------*/
+ /* メイン処理ループ - 返済レコード単位で処理                          */
+ /*----------------------------------------------------------------------*/
+    DO WHILE (EOF_LFPAYF = '0'B);
+       READ FILE(LFPAYF_IN) INTO(LFPAYF2_REC);
+
+       IF EOF_LFPAYF = '1'B THEN LEAVE;
+
+       PROC_CNT = PROC_CNT + 1;
+       LFPAYF_REC_SAV = LFPAYF2_REC;
+       PMT_AMT_IN = LFPAYF2_REC.PAY_AMT;
+       WORK_PAY_ID = LFPAYF2_REC.PLN_ID;
+       MATCH_FLG = '0'B;
+
+       /*----------------------------------------------------*/
+       /* 返済方法チェック                                  */
+       /* '05': 通常返済 / '06': 期限前弁済 / その他: スキップ */
+       /*----------------------------------------------------*/
+       IF LFPAYF2_REC.PAY_METHOD_KBN ^= '05' &
+          LFPAYF2_REC.PAY_METHOD_KBN ^= '06' THEN
+       DO;
+          WRITE FILE(LFPAYF_OUT) FROM(LFPAYF2_REC);
+          SKIP_CNT = SKIP_CNT + 1;
+          ITERATE;
+       END;
+
+       /*----------------------------------------------------*/
+       /* 貸付ファイルから対応レコードを検索                */
+       /*----------------------------------------------------*/
+       DO WHILE (EOF_LFPLNF = '0'B);
+          READ FILE(LFPLNF_IN) INTO(LFPLNF_REC);
+
+          IF EOF_LFPLNF = '1'B THEN LEAVE;
+
+          IF LFPLNF_REC.PLN_ID = WORK_PAY_ID THEN
+          DO;
+             MATCH_FLG = '1'B;
+             LFPLNF_REC_SAV = LFPLNF_REC;
+             LEAVE;
+          END;
+       END;
+
+       IF MATCH_FLG = '0'B THEN
+       DO;
+          /* 対応レコードなし - エラー出力して次へ */
+          LFPAYF2_REC.CLEAR_KBN = '2';  /* エラー */
+          WRITE FILE(LFPAYF_OUT) FROM(LFPAYF2_REC);
+          MSG_BUF = '貸付マスタが見つかりません PAY_ID=' || WORK_PAY_ID;
+          CALL WRITE_ERR(MSG_BUF);
+          ERR_CNT = ERR_CNT + 1;
+          REWIND FILE(LFPLNF_IN);
+          EOF_LFPLNF = '0'B;
+          ITERATE;
+       END;
+
+       /*----------------------------------------------------*/
+       /* 利息計算処理 (PMPLNINT呼出)                      */
+       /* PMPLNINT(PLN_ID, PRIN_AMT, RATE,                */
+       /*          START_DT, PAY_DT, INT_OUT, RC_OUT)      */
+       /*----------------------------------------------------*/
+       INT_ACCRUAL = 0;
+       RC = 0;
+
+       CALL PMPLNINT(
+          LFPLNF_REC_SAV.PLN_ID,
+          LFPLNF_REC_SAV.PLN_PRINCIPAL_AMT,
+          LFPLNF_REC_SAV.PLN_RATE,
+          LFPLNF_REC_SAV.ACCRUAL_START_DT,
+          LFPAYF_REC_SAV.PAY_DT,
+          INT_ACCRUAL,
+          RC
+       );
+
+       IF RC ^= 0 THEN
+       DO;
+          /* 利息計算エラー */
+          LFPAYF2_REC.CLEAR_KBN = '2';  /* エラー */
+          WRITE FILE(LFPAYF_OUT) FROM(LFPAYF2_REC);
+          MSG_BUF = '利息計算エラー PAY_ID=' || WORK_PAY_ID || 
+                    ' RC=' || RC;
+          CALL WRITE_ERR(MSG_BUF);
+          ERR_CNT = ERR_CNT + 1;
+          REWIND FILE(LFPLNF_IN);
+          EOF_LFPLNF = '0'B;
+          ITERATE;
+       END;
+
+       /*----------------------------------------------------*/
+       /* 返済額の整合性チェック                            */
+       /* 返済額 <= (現在の利息 + 新発生利息 + 元本)       */
+       /*----------------------------------------------------*/
+       INT_REMAIN = LFPLNF_REC_SAV.PLN_TOTAL_INT_AMT + INT_ACCRUAL;
+       PRC_REMAIN = LFPLNF_REC_SAV.PLN_PRINCIPAL_AMT;
+
+       IF PMT_AMT_IN > (INT_REMAIN + PRC_REMAIN) THEN
+       DO;
+          /* 返済額超過 */
+          LFPAYF2_REC.CLEAR_KBN = '2';  /* エラー */
+          WRITE FILE(LFPAYF_OUT) FROM(LFPAYF2_REC);
+          MSG_BUF = '返済額超過 PAY_ID=' || WORK_PAY_ID || 
+                    ' 超過額=' || (PMT_AMT_IN - INT_REMAIN - PRC_REMAIN);
+          CALL WRITE_ERR(MSG_BUF);
+          ERR_CNT = ERR_CNT + 1;
+          REWIND FILE(LFPLNF_IN);
+          EOF_LFPLNF = '0'B;
+          ITERATE;
+       END;
+
+       /*----------------------------------------------------*/
+       /* 返済充当処理 (利息→元本の優先順位)              */
+       /*----------------------------------------------------*/
+       /* 1) 返済額から利息を充当 */
+       IF PMT_AMT_IN <= INT_REMAIN THEN
+       DO;
+          LFPLNF_REC_SAV.PLN_TOTAL_INT_AMT = 
+             INT_REMAIN - PMT_AMT_IN;
+          PMT_TO_INT = PMT_AMT_IN;
+          PMT_TO_PRC = 0;
+          LFPAYF2_REC.CLEAR_KBN = '0';  /* 未完済 */
+       END;
+       ELSE
+       DO;
+          /* 2) 利息全部を充当 + 元本に充当 */
+          LFPLNF_REC_SAV.PLN_TOTAL_INT_AMT = 0;
+          PMT_TO_INT = INT_REMAIN;
+          PMT_TO_PRC = PMT_AMT_IN - INT_REMAIN;
+
+          /* 3) 元本充当後の残高チェック */
+          IF (PRC_REMAIN - PMT_TO_PRC) <= 0.01 THEN
+          DO;
+             /* 返済完了と見なす（端数処理） */
+             ROUND_DIFF = (PRC_REMAIN - PMT_TO_PRC);
+             LFPLNF_REC_SAV.PLN_PRINCIPAL_AMT = 0;
+             LFPLNF_REC_SAV.PLN_STATUS_KBN = '00';  /* 返済完了 */
+             LFPAYF2_REC.CLEAR_KBN = '1';  /* 完済 */
+          END;
+          ELSE
+          DO;
+             LFPLNF_REC_SAV.PLN_PRINCIPAL_AMT = 
+                PRC_REMAIN - PMT_TO_PRC;
+             LFPAYF2_REC.CLEAR_KBN = '0';  /* 未完済 */
+          END;
+       END;
+
+       /*----------------------------------------------------*/
+       /* 更新レコード出力                                  */
+       /*----------------------------------------------------*/
+       WRITE FILE(LFPLNF_OUT) FROM(LFPLNF_REC_SAV);
+       WRITE FILE(LFPAYF_OUT) FROM(LFPAYF2_REC);
+       SUCC_CNT = SUCC_CNT + 1;
+
+       /* 貸付ファイルを巻き戻す */
+       REWIND FILE(LFPLNF_IN);
+       EOF_LFPLNF = '0'B;
+
+    END;  /* EOF_LFPAYF ループ終了 */
+
+ /*----------------------------------------------------------------------*/
+ /* 処理終了                                                             */
+ /*----------------------------------------------------------------------*/
+ PROC_END:
+
+    CLOSE FILE(LFPLNF_IN);
+    CLOSE FILE(LFPAYF_IN);
+    CLOSE FILE(LFPLNF_OUT);
+    CLOSE FILE(LFPAYF_OUT);
+    CLOSE FILE(ERRLOG);
+
+    CALL WRITE_LOG('====== 貸付返済処理バッチ 終了 ======');
+    CALL WRITE_LOG('総処理件数: ' || PROC_CNT);
+    CALL WRITE_LOG('成功件数: ' || SUCC_CNT);
+    CALL WRITE_LOG('スキップ件数: ' || SKIP_CNT);
+    CALL WRITE_LOG('エラー件数: ' || ERR_CNT);
+
+ END PMPLNRPY;
+
+ /*----------------------------------------------------------------------*/
+ /* 内部副プログラム                                                     */
+ /*----------------------------------------------------------------------*/
+
+ WRITE_LOG: PROC(MSG) RECURSIVE;
+    DCL MSG CHAR(*);
+    DCL TIMESTAMP PIC '9(14)';
+    TIMESTAMP = '20250220120000';
+    PUT SKIP LIST('[' || TIMESTAMP || '] ' || MSG);
+ END WRITE_LOG;
+
+ WRITE_ERR: PROC(MSG) RECURSIVE;
+    DCL MSG CHAR(*);
+    DCL TIMESTAMP PIC '9(14)';
+    TIMESTAMP = '20250220120000';
+    WRITE FILE(ERRLOG) FROM('[' || TIMESTAMP || '] エラー: ' || MSG);
+ END WRITE_ERR;

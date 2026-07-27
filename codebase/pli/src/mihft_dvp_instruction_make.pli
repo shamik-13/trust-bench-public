@@ -1,0 +1,28 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20200722  決済一課  新規作成 (DVP指図作成)                 */
+/*--------------------------------------------------------------------*/
+mihft_dvp_instruction_make: PROC OPTIONS(MAIN);
+   DCL SCSETL FILE RECORD INPUT;
+   DCL SCDVPI FILE RECORD OUTPUT;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCDVPIC;
+   DCL EOF_SETL BIT(1) INIT('0'B);
+   ON ENDFILE(SCSETL) EOF_SETL = '1'B;
+   OPEN FILE(SCSETL) INPUT; OPEN FILE(SCDVPI) OUTPUT;
+   READ FILE(SCSETL) INTO(SCSETL_REC);
+   DO WHILE(^EOF_SETL);
+      /* 決済指図(SCSETL)から DVP指図を編集。受渡日 ST-SETL-DT は入力値をそのまま使用 */
+      IF ST_SETL_KBN = 'DVP' THEN DO;
+         DV_SETL_ID    = ST_SETL_ID;
+         DV_CIF_NO     = ST_CIF_NO;
+         DV_INSTR_CODE = ST_INSTR_CODE;
+         DV_SETL_DT    = ST_SETL_DT;
+         DV_PAY_AMT    = ST_SETL_AMT;
+         DV_MATCH_STATUS = 'NEW';
+         WRITE FILE(SCDVPI) FROM(SCDVPI_REC);
+      END;
+      READ FILE(SCSETL) INTO(SCSETL_REC);
+   END;
+   CLOSE FILE(SCSETL); CLOSE FILE(SCDVPI);
+END mihft_dvp_instruction_make;

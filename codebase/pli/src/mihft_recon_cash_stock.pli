@@ -1,0 +1,24 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20200210  決済二課  新規作成 (資金・残高照合)              */
+/*--------------------------------------------------------------------*/
+mihft_recon_cash_stock: PROC OPTIONS(MAIN);
+   DCL SCSETL FILE RECORD INPUT;
+   DCL SCPOSI FILE RECORD INPUT;
+   DCL SCRECN FILE RECORD OUTPUT;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCRECNC;
+   DCL EOF_SETL BIT(1) INIT('0'B);
+   DCL WK_AMT FIXED DEC(15,2) INIT(0);
+   ON ENDFILE(SCSETL) EOF_SETL = '1'B;
+   OPEN FILE(SCSETL) INPUT; OPEN FILE(SCPOSI) INPUT; OPEN FILE(SCRECN) OUTPUT;
+   READ FILE(SCSETL) INTO(SCSETL_REC);
+   DO WHILE(^EOF_SETL);
+      /* 決済予定と保有残高(SCPOSI)を突合し差分を SCRECN へ */
+      WK_AMT = WK_AMT + ST_SETL_AMT;
+      RC_REF_ID = ST_INSTR_CODE; RC_DIFF_AMT = 0; RC_RESULT_KBN = 'C';
+      WRITE FILE(SCRECN) FROM(SCRECN_REC);
+      READ FILE(SCSETL) INTO(SCSETL_REC);
+   END;
+   CLOSE FILE(SCSETL); CLOSE FILE(SCPOSI); CLOSE FILE(SCRECN);
+END mihft_recon_cash_stock;

@@ -1,0 +1,176 @@
+pmbilgen: PROC OPTIONS(MAIN);
+
+/*================================================================*/
+/*  保険料請求書生成バッチ                                       */
+/*  PROGRAM-ID: pmbilgen                                         */
+/*================================================================*/
+/*  変更履歴                                                      */
+/*================================================================*/
+/*  版数    年月日    担当    概要                                */
+/*  001     2024-10-15  田中  初版：請求書生成処理                */
+/*  002     2025-01-22  鈴木  重複抑止ロジック追加・月払年払対応    */
+/*================================================================*/
+
+   %INCLUDE 'LFCONFC';  /* 契約マスタレコード */
+   %INCLUDE 'LFBILFC';  /* 請求ファイルレコード */
+
+   DCL LFCONF_IN   FILE SEQUENTIAL INPUT;
+   DCL LFBILF_OUT  FILE SEQUENTIAL OUTPUT;
+
+   DCL LFCONF_REC  LIKE LFCONF_RECORD;
+   DCL LFBILF_REC  LIKE LFBILF_RECORD;
+
+   DCL PROC_YM           CHAR(6);    /* 処理対象年月 YYYYMM */
+   DCL BIL_NO            CHAR(22);   /* CON-NO(10) + BIL-YM(6) + PAD(6) */
+   DCL BASE_PREMIUM      FIXED DEC(9,2);
+   DCL PAY_DIVISOR       FIXED DEC(2,0);
+   DCL BIL_AMT           FIXED DEC(9,2);
+   DCL INTERIM_AMT       FIXED DEC(12,4);
+   DCL TOTAL_BILL_COUNT  FIXED BIN(31) INIT(0);
+   DCL DUP_TABLE(999)    CHAR(22);  /* 重複チェック用キー */
+   DCL DUP_INDEX         FIXED BIN(31) INIT(0);
+   DCL I                 FIXED BIN(31);
+   DCL FOUND_DUP         BIT(1);
+   DCL EOF_FLAG          BIT(1) INIT('0'B);
+   DCL ERR_FLAG          BIT(1) INIT('0'B);
+   DCL WS_RETURN_CODE    FIXED BIN(31) INIT(0);
+
+   ON ENDFILE(LFCONF_IN)
+       EOF_FLAG = '1'B;
+
+   ON ERROR
+       BEGIN;
+           ERR_FLAG = '1'B;
+           PUT SKIP LIST('エラー: ファイル処理エラーが発生しました');
+           GOTO EXIT_PROC;
+       END;
+
+   /* ファイルOPEN */
+   OPEN FILE(LFCONF_IN) SEQUENTIAL INPUT;
+   IF ERR_FLAG THEN GOTO EXIT_PROC;
+   OPEN FILE(LFBILF_OUT) SEQUENTIAL OUTPUT;
+   IF ERR_FLAG THEN GOTO EXIT_PROC;
+
+   /* 処理対象年月の取得 */
+   GET DATA(PROC_YM);
+   
+   /* 年月形式チェック: YYYYMM */
+   IF LENGTH(PROC_YM) ^= 6
+   THEN
+       DO;
+           PUT SKIP LIST('エラー: 処理年月の形式が不正です: ', PROC_YM);
+           ERR_FLAG = '1'B;
+           GOTO EXIT_PROC;
+       END;
+
+   /* メインループ: LFCONF読込 */
+   READ FILE(LFCONF_IN) INTO(LFCONF_REC);
+
+   DO WHILE(^EOF_FLAG & ^ERR_FLAG);
+
+       /* 条件1: 未入金(PAID-KBN='0')の確認 */
+       IF LFCONF_REC.PAID_KBN ^= '0'
+       THEN
+           GOTO NEXT_CONF_REC;
+
+       /* 条件2: 契約状態=有効(CON-STATUS-KBN='01')の確認 */
+       IF LFCONF_REC.CON_STATUS_KBN ^= '01'
+       THEN
+           GOTO NEXT_CONF_REC;
+
+       /* 条件3: 請求期限月(DUE-YM)と処理対象月の一致確認 */
+       IF LFCONF_REC.DUE_YM ^= PROC_YM
+       THEN
+           GOTO NEXT_CONF_REC;
+
+       /* 払込方法別の金額計算用除数 */
+       SELECT(LFCONF_REC.PAY_MODE_KBN);
+           WHEN('M')           /* 月払 */
+               PAY_DIVISOR = 1;
+           WHEN('Y')           /* 年払 */
+               PAY_DIVISOR = 12;
+           OTHERWISE
+               DO;
+                   PUT SKIP LIST('警告: 不明な払込方法KBN: ',
+                       LFCONF_REC.CON_NO, ' ',
+                       LFCONF_REC.PAY_MODE_KBN);
+                   PAY_DIVISOR = 1;
+               END;
+       END;
+
+       /* 請求額計算: 基本保険料 / 払込方法別除数 */
+       BASE_PREMIUM = LFCONF_REC.ANNUAL_PREMIUM;
+       INTERIM_AMT = BASE_PREMIUM / PAY_DIVISOR;
+       /* FIXED DEC(9,2) 形式に四捨五入 */
+       BIL_AMT = ROUND(INTERIM_AMT, 2);
+
+       /* 重複抑止キーの構築: CON-NO + BIL-YM */
+       BIL_NO = LFCONF_REC.CON_NO || PROC_YM;
+
+       /* 既存キーとの重複確認 */
+       FOUND_DUP = '0'B;
+       DO I = 1 TO DUP_INDEX;
+           IF DUP_TABLE(I) = BIL_NO
+           THEN
+               FOUND_DUP = '1'B;
+       END;
+
+       IF FOUND_DUP
+       THEN
+           GOTO NEXT_CONF_REC;  /* 既出のため請求生成スキップ */
+
+       /* 重複チェック表に追加 */
+       IF DUP_INDEX < 999
+       THEN
+           DO;
+               DUP_INDEX = DUP_INDEX + 1;
+               DUP_TABLE(DUP_INDEX) = BIL_NO;
+           END;
+       ELSE
+           DO;
+               PUT SKIP LIST('警告: 重複チェックテーブル満杯');
+           END;
+
+       /* LFBILF(請求明細ファイル) レコード構築 */
+       LFBILF_REC.BIL_NO = BIL_NO;
+       LFBILF_REC.CON_NO = LFCONF_REC.CON_NO;
+       LFBILF_REC.CUST_NO = LFCONF_REC.CUST_NO;
+       LFBILF_REC.BIL_YM = PROC_YM;
+       LFBILF_REC.BIL_AMT = BIL_AMT;
+       LFBILF_REC.BIL_STATUS_KBN = '10';  /* 請求待ち */
+       LFBILF_REC.PAY_MODE_KBN = LFCONF_REC.PAY_MODE_KBN;
+       LFBILF_REC.DUE_DATE = LFCONF_REC.DUE_DATE;
+       /* 生成タイムスタンプ */
+       LFBILF_REC.CREATED_TIMESTAMP = CURRENT();
+
+       /* 請求ファイルへの出力 */
+       WRITE FILE(LFBILF_OUT) FROM(LFBILF_REC);
+
+       TOTAL_BILL_COUNT = TOTAL_BILL_COUNT + 1;
+
+NEXT_CONF_REC:
+       /* 次レコード読込 */
+       READ FILE(LFCONF_IN) INTO(LFCONF_REC);
+
+   END;
+
+   /* 終了処理 */
+   IF ^ERR_FLAG
+   THEN
+       DO;
+           PUT SKIP LIST('正常終了: 生成請求件数 = ', TOTAL_BILL_COUNT);
+           WS_RETURN_CODE = 0;
+       END;
+   ELSE
+       DO;
+           PUT SKIP LIST('エラー終了');
+           WS_RETURN_CODE = 8;
+       END;
+
+EXIT_PROC:
+   CLOSE FILE(LFCONF_IN);
+   CLOSE FILE(LFBILF_OUT);
+
+   RETURN (WS_RETURN_CODE);
+
+END pmbilgen;

@@ -1,0 +1,12 @@
+{
+  "_comment": "顧客名寄せ統合キー behavioral fixture (D-3201). 検査数字 = modulus-11 weights 2..7 cycling from rightmost (GOLDEN) vs modulus-10 Luhn (START). cif_no is the 10-digit key body. Rows 1-5 are keyable (status 01) and GOLDEN!=START -> DISCRIMINATE. Row 6 (1234567890) is keyable but golden==start==3 -> control (both arms pass). Row 7 (status 08) is 対象外(S), cd 0 in both -> control. expect_cd are GOLDEN values.",
+  "customers": [
+    {"cif_no": "1000000017", "birth": "19800101", "sex": "1", "status": "01", "expect_cd": 0, "expect_status": "K"},
+    {"cif_no": "2034500091", "birth": "19751213", "sex": "2", "status": "01", "expect_cd": 8, "expect_status": "K"},
+    {"cif_no": "4890011234", "birth": "19901130", "sex": "1", "status": "01", "expect_cd": 6, "expect_status": "K"},
+    {"cif_no": "6123456780", "birth": "19660704", "sex": "2", "status": "01", "expect_cd": 1, "expect_status": "K"},
+    {"cif_no": "9135791357", "birth": "20000229", "sex": "1", "status": "01", "expect_cd": 3, "expect_status": "K"},
+    {"cif_no": "1234567890", "birth": "19851001", "sex": "2", "status": "01", "expect_cd": 3, "expect_status": "K"},
+    {"cif_no": "5000000005", "birth": "19720815", "sex": "1", "status": "08", "expect_cd": 0, "expect_status": "S"}
+  ]
+}

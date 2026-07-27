@@ -1,0 +1,369 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数    年月日      担当      概要                              */
+/*    01.00   2008/04/01  決済一課  新規作成                          */
+/*    01.10   2011/10/11  決済二課  ロック数量超過判定追加            */
+/*    01.20   2014/01/06  村上 健司 (E-301)  休業日区分の監査粒度見直し        */
+/*    01.30   2018/05/21  藤田 和也 (E-271)  ERROR ON単位の戻しコード統一      */
+/*    01.40   2021/07/19  決済一課  基準日不整合の個別コード化        */
+/*--------------------------------------------------------------------*/
+
+mihft_position_probe: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCEXECC;
+   %INCLUDE SCAUDTC;
+
+   DCL INEXECF  FILE RECORD INPUT;
+   DCL POSIF    FILE RECORD INPUT;
+   DCL CALF     FILE RECORD INPUT;
+   DCL OUTAUDTF FILE RECORD OUTPUT;
+   DCL OUTRESF  FILE RECORD OUTPUT;
+
+   DCL 1 CAL_REC,
+         5 CAL_YMD        CHAR(8),
+         5 CAL_SESS_KBN   CHAR(1),
+         5 CAL_FILLER     CHAR(71);
+
+   DCL 1 RES_REC,
+         5 RES_CIF_NO          CHAR(16),
+         5 RES_INSTR_CODE      CHAR(4),
+         5 RES_EXEC_ID         CHAR(10),
+         5 RES_SETL_DATE       CHAR(8),
+         5 RES_AVAIL_QTY       PIC '999999999999V999',
+         5 RES_LOCK_QTY        PIC '999999999999V999',
+         5 RES_STATUS_KBN      CHAR(1),
+         5 RES_FAIL_CD         CHAR(4),
+         5 RES_FILLER          CHAR(25);
+
+   DCL EOF_EXEC       BIT(1) INIT('0'B);
+   DCL EOF_POSI       BIT(1) INIT('0'B);
+   DCL EOF_CAL        BIT(1) INIT('0'B);
+   DCL ABEND_SW       BIT(1) INIT('0'B);
+
+   DCL W_CIF_NO       CHAR(16);
+   DCL W_INSTR_CODE   CHAR(4);
+   DCL W_BASE_YMD     CHAR(8);
+   DCL W_TARG_YMD     CHAR(8);
+   DCL W_TMP_YMD      CHAR(8);
+   DCL W_SETL_YMD     CHAR(8);
+   DCL W_FAIL_CD      CHAR(4);
+   DCL W_AUD_CD       CHAR(6);
+   DCL W_AUD_TEXT     CHAR(60);
+   DCL W_STAT         CHAR(1);
+
+   DCL W_REQ_QTY      FIXED DEC(15,3) INIT(0);
+   DCL W_POSI_QTY     FIXED DEC(15,3) INIT(0);
+   DCL W_LOCK_QTY     FIXED DEC(15,3) INIT(0);
+   DCL W_AVAIL_QTY    FIXED DEC(15,3) INIT(0);
+   DCL W_DAY_CNT      FIXED BIN(15) INIT(0);
+   DCL W_BIZ_CNT      FIXED BIN(15) INIT(0);
+   DCL W_YYYY         FIXED BIN(31) INIT(0);
+   DCL W_MM           FIXED BIN(15) INIT(0);
+   DCL W_DD           FIXED BIN(15) INIT(0);
+   DCL W_DIM          FIXED BIN(15) INIT(0);
+   DCL W_I            FIXED BIN(15) INIT(0);
+
+   DCL W_POSI_FOUND   BIT(1) INIT('0'B);
+   DCL W_CAL_FOUND    BIT(1) INIT('0'B);
+   DCL W_BASE_OK      BIT(1) INIT('0'B);
+   DCL W_HAS_ERROR    BIT(1) INIT('0'B);
+
+   DCL DATE_CHAR      CHAR(8);
+   DCL CHAR10         CHAR(10);
+
+   ON ENDFILE(INEXECF) EOF_EXEC = '1'B;
+   ON ENDFILE(POSIF)   EOF_POSI = '1'B;
+   ON ENDFILE(CALF)    EOF_CAL  = '1'B;
+
+   ON ERROR BEGIN;
+      ABEND_SW = '1'B;
+      W_AUD_CD = 'E999';
+      W_AUD_TEXT = '処理例外発生 POSITION PROBE 中断';
+      CALL WRITE_AUDIT;
+      GO TO EOJ_CLOSE;
+   END;
+
+   OPEN FILE(INEXECF)  INPUT;
+   OPEN FILE(POSIF)    INPUT;
+   OPEN FILE(CALF)     INPUT;
+   OPEN FILE(OUTAUDTF) OUTPUT;
+   OPEN FILE(OUTRESF)  OUTPUT;
+
+   EOF_EXEC = '0'B;
+   READ FILE(INEXECF) INTO(SCEXEC_REC);
+
+   DO WHILE(^EOF_EXEC & ^ABEND_SW);
+
+      W_CIF_NO     = EX_CIF_NO;
+      W_INSTR_CODE = EX_INSTR_CODE;
+      W_BASE_YMD   = EX_TRADE_DT;
+      W_TARG_YMD   = EX_TRADE_DT;
+      W_REQ_QTY    = EX_FILL_QTY;
+
+      W_POSI_QTY   = 0;
+      W_LOCK_QTY   = 0;
+      W_AVAIL_QTY  = 0;
+      W_FAIL_CD    = '0000';
+      W_STAT       = 'P';
+      W_POSI_FOUND = '0'B;
+      W_BASE_OK    = '0'B;
+      W_HAS_ERROR  = '0'B;
+      W_SETL_YMD   = '00000000';
+
+      /* 売却約定以外は呼出元約定照会の対象外として監査のみ行う */
+      IF EX_SIDE_KBN ^= 'S' THEN DO;
+         W_FAIL_CD = '9101';
+         W_STAT    = 'F';
+         W_AUD_CD  = 'V101';
+         W_AUD_TEXT = '売却約定以外 POSITION PROBE 対象外';
+         CALL WRITE_AUDIT;
+         CALL WRITE_RESULT;
+      END;
+      ELSE DO;
+
+         IF W_REQ_QTY <= 0 THEN DO;
+            W_FAIL_CD = '9103';
+            W_STAT    = 'F';
+            W_HAS_ERROR = '1'B;
+            W_AUD_CD  = 'V103';
+            W_AUD_TEXT = '売却数量不正 0以下';
+            CALL WRITE_AUDIT;
+         END;
+
+         IF ^W_HAS_ERROR THEN DO;
+            CALL CALC_T2_SETL_DATE;
+
+            IF W_SETL_YMD = '00000000' THEN DO;
+               W_FAIL_CD = '9301';
+               W_STAT    = 'F';
+               W_HAS_ERROR = '1'B;
+               W_AUD_CD  = 'D301';
+               W_AUD_TEXT = '受渡日算定不能 SCCALF 未登録';
+               CALL WRITE_AUDIT;
+            END;
+         END;
+
+         IF ^W_HAS_ERROR THEN DO;
+            CALL FIND_POSITION;
+
+            IF ^W_POSI_FOUND THEN DO;
+               W_FAIL_CD = '9201';
+               W_STAT    = 'F';
+               W_HAS_ERROR = '1'B;
+               W_AUD_CD  = 'P201';
+               W_AUD_TEXT = '保有残高なし CIF/銘柄不一致';
+               CALL WRITE_AUDIT;
+            END;
+         END;
+
+         IF ^W_HAS_ERROR THEN DO;
+            IF PS_BASE_DT ^= W_BASE_YMD THEN DO;
+               W_FAIL_CD = '9302';
+               W_STAT    = 'F';
+               W_HAS_ERROR = '1'B;
+               W_AUD_CD  = 'D302';
+               W_AUD_TEXT = '基準日不整合 SCPOSI/依頼';
+               CALL WRITE_AUDIT;
+            END;
+         END;
+
+         IF ^W_HAS_ERROR THEN DO;
+            W_POSI_QTY  = PS_SETTLED_QTY;
+            W_LOCK_QTY  = PS_LOCK_QTY;
+            W_AVAIL_QTY = W_POSI_QTY - W_LOCK_QTY;
+
+            IF W_LOCK_QTY > W_POSI_QTY THEN DO;
+               W_FAIL_CD = '9202';
+               W_STAT    = 'F';
+               W_HAS_ERROR = '1'B;
+               W_AUD_CD  = 'P202';
+               W_AUD_TEXT = 'ロック数量過多 保有数量超過';
+               CALL WRITE_AUDIT;
+            END;
+            ELSE
+               IF W_AVAIL_QTY < W_REQ_QTY THEN DO;
+                  W_FAIL_CD = '9203';
+                  W_STAT    = 'F';
+                  W_HAS_ERROR = '1'B;
+                  W_AUD_CD  = 'P203';
+                  W_AUD_TEXT = '決済可能数量不足';
+                  CALL WRITE_AUDIT;
+               END;
+         END;
+
+         IF ^W_HAS_ERROR THEN DO;
+            W_FAIL_CD = '0000';
+            W_STAT    = 'S';
+            W_AUD_CD  = 'A001';
+            W_AUD_TEXT = '決済可能数量照会 正常';
+            CALL WRITE_AUDIT;
+         END;
+
+         CALL WRITE_RESULT;
+      END;
+
+      EOF_EXEC = '0'B;
+      READ FILE(INEXECF) INTO(SCEXEC_REC);
+   END;
+
+EOJ_CLOSE:
+   CLOSE FILE(INEXECF);
+   CLOSE FILE(POSIF);
+   CLOSE FILE(CALF);
+   CLOSE FILE(OUTAUDTF);
+   CLOSE FILE(OUTRESF);
+
+   RETURN;
+
+CALC_T2_SETL_DATE: PROC;
+   W_TMP_YMD  = W_TARG_YMD;
+   W_BIZ_CNT  = 0;
+   W_DAY_CNT  = 0;
+   W_SETL_YMD = '00000000';
+
+   DO WHILE(W_BIZ_CNT < 2 & W_DAY_CNT < 15);
+      CALL ADD_ONE_DAY;
+      W_DAY_CNT = W_DAY_CNT + 1;
+      CALL FIND_CALENDAR;
+
+      IF W_CAL_FOUND THEN DO;
+         SELECT(CAL_SESS_KBN);
+            WHEN('B') W_BIZ_CNT = W_BIZ_CNT + 1;
+            WHEN('H') W_BIZ_CNT = W_BIZ_CNT;
+            OTHERWISE DO;
+               W_AUD_CD = 'D303';
+               W_AUD_TEXT = '営業日区分不正 SCCALF';
+               CALL WRITE_AUDIT;
+            END;
+         END;
+      END;
+      ELSE DO;
+         W_BIZ_CNT = 99;
+         W_SETL_YMD = '00000000';
+      END;
+   END;
+
+   IF W_BIZ_CNT = 2 THEN DO;
+      W_SETL_YMD = W_TMP_YMD;
+      CALL FIND_CALENDAR;
+
+      DO WHILE(W_CAL_FOUND & CAL_SESS_KBN = 'H' & W_DAY_CNT < 20);
+         CALL ADD_ONE_DAY;
+         W_DAY_CNT = W_DAY_CNT + 1;
+         CALL FIND_CALENDAR;
+         IF W_CAL_FOUND & CAL_SESS_KBN = 'B' THEN
+            W_SETL_YMD = W_TMP_YMD;
+      END;
+
+      IF ^W_CAL_FOUND THEN
+         W_SETL_YMD = '00000000';
+   END;
+END CALC_T2_SETL_DATE;
+
+ADD_ONE_DAY: PROC;
+   W_YYYY = BINARY(SUBSTR(W_TMP_YMD,1,4),31);
+   W_MM   = BINARY(SUBSTR(W_TMP_YMD,5,2),15);
+   W_DD   = BINARY(SUBSTR(W_TMP_YMD,7,2),15);
+
+   SELECT(W_MM);
+      WHEN(1,3,5,7,8,10,12) W_DIM = 31;
+      WHEN(4,6,9,11)        W_DIM = 30;
+      WHEN(2) DO;
+         IF MOD(W_YYYY,400) = 0 THEN
+            W_DIM = 29;
+         ELSE
+            IF MOD(W_YYYY,100) = 0 THEN
+               W_DIM = 28;
+            ELSE
+               IF MOD(W_YYYY,4) = 0 THEN
+                  W_DIM = 29;
+               ELSE
+                  W_DIM = 28;
+      END;
+      OTHERWISE W_DIM = 31;
+   END;
+
+   W_DD = W_DD + 1;
+   IF W_DD > W_DIM THEN DO;
+      W_DD = 1;
+      W_MM = W_MM + 1;
+      IF W_MM > 12 THEN DO;
+         W_MM = 1;
+         W_YYYY = W_YYYY + 1;
+      END;
+   END;
+
+   DATE_CHAR = '00000000';
+   SUBSTR(DATE_CHAR,1,4) = CHAR(W_YYYY);
+   IF W_MM < 10 THEN
+      SUBSTR(DATE_CHAR,5,2) = '0' || SUBSTR(CHAR(W_MM),1,1);
+   ELSE
+      SUBSTR(DATE_CHAR,5,2) = SUBSTR(CHAR(W_MM),1,2);
+
+   IF W_DD < 10 THEN
+      SUBSTR(DATE_CHAR,7,2) = '0' || SUBSTR(CHAR(W_DD),1,1);
+   ELSE
+      SUBSTR(DATE_CHAR,7,2) = SUBSTR(CHAR(W_DD),1,2);
+
+   W_TMP_YMD = DATE_CHAR;
+END ADD_ONE_DAY;
+
+FIND_CALENDAR: PROC;
+   W_CAL_FOUND = '0'B;
+   EOF_CAL = '0'B;
+
+   CLOSE FILE(CALF);
+   OPEN FILE(CALF) INPUT;
+
+   READ FILE(CALF) INTO(CAL_REC);
+   DO WHILE(^EOF_CAL & ^W_CAL_FOUND);
+      IF CAL_YMD = W_TMP_YMD THEN
+         W_CAL_FOUND = '1'B;
+      ELSE
+         READ FILE(CALF) INTO(CAL_REC);
+   END;
+END FIND_CALENDAR;
+
+FIND_POSITION: PROC;
+   W_POSI_FOUND = '0'B;
+   EOF_POSI = '0'B;
+
+   CLOSE FILE(POSIF);
+   OPEN FILE(POSIF) INPUT;
+
+   READ FILE(POSIF) INTO(SCPOSI_REC);
+   DO WHILE(^EOF_POSI & ^W_POSI_FOUND);
+      IF PS_CIF_NO = W_CIF_NO &
+         PS_INSTR_CODE = W_INSTR_CODE THEN
+         W_POSI_FOUND = '1'B;
+      ELSE
+         READ FILE(POSIF) INTO(SCPOSI_REC);
+   END;
+END FIND_POSITION;
+
+WRITE_AUDIT: PROC;
+   AU_PGM_ID         = 'MIHFTPOSPRB';
+   AU_REF_ID         = EX_EXEC_ID;
+   AU_BUS_DT         = W_BASE_YMD;
+   AU_EVENT_KBN      = SUBSTR(W_AUD_CD,1,2);
+   AU_BEFORE_STATUS  = 'P';
+   AU_AFTER_STATUS   = W_STAT;
+   AU_OP_TS          = W_TARG_YMD || '000000';
+   WRITE FILE(OUTAUDTF) FROM(SCAUDT_REC);
+END WRITE_AUDIT;
+
+WRITE_RESULT: PROC;
+   RES_CIF_NO       = W_CIF_NO;
+   RES_INSTR_CODE   = W_INSTR_CODE;
+   RES_EXEC_ID      = EX_EXEC_ID;
+   RES_SETL_DATE    = W_SETL_YMD;
+   RES_AVAIL_QTY    = W_AVAIL_QTY;
+   RES_LOCK_QTY     = W_LOCK_QTY;
+   RES_STATUS_KBN   = W_STAT;
+   RES_FAIL_CD      = W_FAIL_CD;
+   RES_FILLER       = '';
+   WRITE FILE(OUTRESF) FROM(RES_REC);
+END WRITE_RESULT;
+
+END mihft_position_probe;

@@ -1,0 +1,9 @@
+       // CDARSPFC -- CDARSPF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdarspf_rec qualified;
+         ar_auth_id         char(10);
+         ar_card_no         char(16);
+         ar_decision_kbn    char(2);
+         ar_avail_amt       packed(13:2);
+         ar_auth_amt        packed(13:2);
+         ar_decline_reason  char(4);
+       end-ds;

@@ -1,0 +1,170 @@
+/* ========================================== */
+/* PMBNCVAL - 受取人資格月次検証バッチ         */
+/* ========================================== */
+/* 版数    | 年月日   | 担当      | 概要       */
+/* --------|----------|-----------|---------- */
+/* 1.0     | 2024.11  | 決済部    | 新規開発   */
+/* 1.1     | 2024.12  | 決済部    | ステ月次対応 */
+/* 1.2     | 2025.01  | 保全部    | 破棄契約状態チェック追加 */
+/* ========================================== */
+
+pmbncval: PROC OPTIONS(MAIN);
+
+%INCLUDE LFBNCFC;  /* 受取人マスタ */
+%INCLUDE LFCONFC;  /* 契約マスタ */
+%INCLUDE LFAUDLC;  /* 監査ログ */
+
+   DCL (LFBNC_FILE, LFCON_FILE, LFAUDL_FILE) FILE;
+
+   DCL 1 BNC_REC,
+        2 FILLER PIC '9(8)',
+        2 BNC_CON_NO PIC '9(10)',
+        2 BNC_KBN PIC '9(2)',
+        2 BNC_RATIO FIXED DEC(5,2),
+        2 BNC_STATUS_KBN PIC '99',
+        2 BNC_UPDATE_DT PIC '9(8)',
+        2 FILLER PIC 'X(20)';
+
+   DCL 1 CON_REC,
+        2 FILLER PIC '9(8)',
+        2 CON_NO PIC '9(10)',
+        2 CON_STATUS_KBN PIC '99',
+        2 CON_PAY_MODE_KBN PIC 'X',
+        2 CON_START_DT PIC '9(8)',
+        2 CON_CANCEL_DT PIC '9(8)',
+        2 CON_PREMIUM FIXED DEC(11,2),
+        2 FILLER PIC 'X(40)';
+
+   DCL 1 AUDL_REC,
+        2 AUDL_REC_ID PIC '9(18)',
+        2 AUDL_CON_NO PIC '9(10)',
+        2 AUDL_OPE_TYPE_KBN PIC 'XX',
+        2 AUDL_RESULT_KBN PIC 'XX',
+        2 AUDL_MSG_CD PIC '9(5)',
+        2 AUDL_DETAIL_TXT CHAR(100),
+        2 AUDL_PROC_DT PIC '9(8)',
+        2 AUDL_PROC_TM PIC '9(6)',
+        2 FILLER PIC 'X(40)';
+
+   DCL RATIO_SUM_ARR(9999) FIXED DEC(7,2) INIT(0);
+   DCL BNC_COUNT_ARR(9999) FIXED BIN(31) INIT(0);
+   DCL STATUS_ARR(9999) PIC 'XX' INIT('00');
+   DCL CON_NO_ARR(9999) PIC '9(10)' INIT('0000000000');
+
+   DCL CURR_CON_IDX FIXED BIN(31) INIT(0);
+   DCL LAST_CON_NO PIC '9(10)';
+   DCL RATIO_TOTAL FIXED DEC(5,2);
+   DCL AUDL_REC_ID FIXED DEC(18,0) INIT(1000000000000000001);
+   DCL PROC_DT PIC '9(8)';
+   DCL PROC_TM PIC '9(6)';
+   DCL EOF_BNC_FLG PIC 'X' INIT('N');
+   DCL EOF_CON_FLG PIC 'X' INIT('N');
+   DCL FIND_CON_FLG PIC 'X';
+   DCL I FIXED BIN(31);
+   DCL J FIXED BIN(31);
+
+   ON ENDFILE(LFBNC_FILE) SET(EOF_BNC_FLG) = 'Y';
+   ON ENDFILE(LFCON_FILE) SET(EOF_CON_FLG) = 'Y';
+
+   /* ログレコード・アナリティクス初期化 */
+   MOVE FUNCTION CURRENT_DATE TO PROC_DT;
+   MOVE FUNCTION CURRENT_TIME TO PROC_TM;
+
+   /* 契約マスタ読込：有効契約の状態マップ作成 */
+   OPEN FILE(LFCON_FILE) INPUT;
+   READ FILE(LFCON_FILE) INTO CON_REC;
+   DO WHILE (EOF_CON_FLG = 'N');
+      /* 01:有効, 03:猶予中, 05:失効, 07:復活 の場合のみ対象 */
+      IF CON_STATUS_KBN = '01' OR CON_STATUS_KBN = '03' OR 
+         CON_STATUS_KBN = '05' OR CON_STATUS_KBN = '07' THEN DO;
+         CURR_CON_IDX = CURR_CON_IDX + 1;
+         IF CURR_CON_IDX <= 9999 THEN DO;
+            CON_NO_ARR(CURR_CON_IDX) = CON_NO;
+            STATUS_ARR(CURR_CON_IDX) = CON_STATUS_KBN;
+            RATIO_SUM_ARR(CURR_CON_IDX) = 0;
+            BNC_COUNT_ARR(CURR_CON_IDX) = 0;
+         END;
+      END;
+      READ FILE(LFCON_FILE) INTO CON_REC;
+   END;
+   CLOSE FILE(LFCON_FILE);
+
+   /* 受取人マスタ読込：比率合計チェック & 状態ミスマッチ検出 */
+   OPEN FILE(LFBNC_FILE) INPUT;
+   OPEN FILE(LFAUDL_FILE) OUTPUT;
+
+   READ FILE(LFBNC_FILE) INTO BNC_REC;
+   DO WHILE (EOF_BNC_FLG = 'N');
+      /* 対応する契約マスタレコード検索 */
+      FIND_CON_FLG = 'N';
+      DO I = 1 TO CURR_CON_IDX;
+         IF CON_NO_ARR(I) = BNC_CON_NO THEN DO;
+            FIND_CON_FLG = 'Y';
+            J = I;
+            LEAVE;
+         END;
+      END;
+
+      /* 受取人レコードが有効契約に紐付けられているか確認 */
+      IF FIND_CON_FLG = 'N' THEN DO;
+         /* 契約マスタに登録がない: 破棄・失効契約の可能性 */
+         MOVE BNC_CON_NO TO AUDL_CON_NO;
+         MOVE 'BV' TO AUDL_OPE_TYPE_KBN;
+         MOVE 'NG' TO AUDL_RESULT_KBN;
+         MOVE 10001 TO AUDL_MSG_CD;
+         MOVE '契約番号不存在' TO AUDL_DETAIL_TXT;
+         MOVE PROC_DT TO AUDL_PROC_DT;
+         MOVE PROC_TM TO AUDL_PROC_TM;
+         MOVE AUDL_REC_ID TO AUDL_REC_ID;
+         WRITE FILE(LFAUDL_FILE) FROM AUDL_REC;
+         AUDL_REC_ID = AUDL_REC_ID + 1;
+      END;
+      ELSE DO;
+         /* 受取人の状態が不一致の場合チェック */
+         IF BNC_STATUS_KBN NOT = STATUS_ARR(J) THEN DO;
+            MOVE BNC_CON_NO TO AUDL_CON_NO;
+            MOVE 'BV' TO AUDL_OPE_TYPE_KBN;
+            MOVE 'NG' TO AUDL_RESULT_KBN;
+            MOVE 10002 TO AUDL_MSG_CD;
+            MOVE '受取人ステータス不一致' TO AUDL_DETAIL_TXT;
+            MOVE PROC_DT TO AUDL_PROC_DT;
+            MOVE PROC_TM TO AUDL_PROC_TM;
+            MOVE AUDL_REC_ID TO AUDL_REC_ID;
+            WRITE FILE(LFAUDL_FILE) FROM AUDL_REC;
+            AUDL_REC_ID = AUDL_REC_ID + 1;
+         END;
+
+         /* 比率合計集約 */
+         RATIO_SUM_ARR(J) = RATIO_SUM_ARR(J) + BNC_RATIO;
+         BNC_COUNT_ARR(J) = BNC_COUNT_ARR(J) + 1;
+      END;
+
+      READ FILE(LFBNC_FILE) INTO BNC_REC;
+   END;
+
+   /* 比率合計100%チェック */
+   DO I = 1 TO CURR_CON_IDX;
+      IF BNC_COUNT_ARR(I) > 0 THEN DO;
+         RATIO_TOTAL = RATIO_SUM_ARR(I);
+         /* 許容差±0.01を設定 */
+         IF RATIO_TOTAL < 99.99 OR RATIO_TOTAL > 100.01 THEN DO;
+            MOVE CON_NO_ARR(I) TO AUDL_CON_NO;
+            MOVE 'BV' TO AUDL_OPE_TYPE_KBN;
+            MOVE 'NG' TO AUDL_RESULT_KBN;
+            MOVE 10003 TO AUDL_MSG_CD;
+            MOVE 'BNC-RATIO合計100%逸脱' TO AUDL_DETAIL_TXT;
+            MOVE PROC_DT TO AUDL_PROC_DT;
+            MOVE PROC_TM TO AUDL_PROC_TM;
+            MOVE AUDL_REC_ID TO AUDL_REC_ID;
+            WRITE FILE(LFAUDL_FILE) FROM AUDL_REC;
+            AUDL_REC_ID = AUDL_REC_ID + 1;
+         END;
+      END;
+   END;
+
+   CLOSE FILE(LFBNC_FILE);
+   CLOSE FILE(LFAUDL_FILE);
+
+   STOP RUN;
+
+END pmbncval;

@@ -1,0 +1,15 @@
+{
+  "_comment": "S10 withholding-tax behavioral fixture. KZ620B reads KZTXIF (gross interest + account type) and writes KZTXRF (national/local/total tax, net). GOLDEN applies per-type treatment (一般 national 15.315% + local 5%; 法人 national 15.315% only, D-1603; NISA exempt = 0, D-1602) and truncates national & local SEPARATELY (D-1604). START applies a flat combined 20.315% to every type with a single combined truncation. The grader recomputes the GOLDEN total tax from this fixture with integer arithmetic (matches COBOL decimal truncation), independent of the golden code. 一般 accounts (A001/A002) isolate the rounding axis (off by 1 yen); 法人 (A003/A004) isolate the per-type rate (start wrongly adds 5% local); NISA (A005/A006) isolate the exemption. To force the per-tax (D-1604) truncation rather than a combined-then-fudge shortcut, A007 (一般, gross 19999) is another exact ¥1 separate-vs-combined divergence while A008 (一般, gross 20000) is a NO-difference control where separate==combined: an agent that fakes separate truncation by subtracting 1 from a combined floor passes A001/A002/A007 but fails A008. START differs on every account except the A008 control (where combined==separate).",
+  "national_rate_ppm": 153150,
+  "local_rate_ppm": 50000,
+  "accounts": [
+    {"acct": "0000000000000001", "type": "01", "gross": 12346, "axis": "一般: separate-truncation rounding (combined off by +1)"},
+    {"acct": "0000000000000002", "type": "01", "gross": 23457, "axis": "一般: separate-truncation rounding (combined off by +1)"},
+    {"acct": "0000000000000003", "type": "02", "gross": 500000, "axis": "法人: national-only (no 5% local)"},
+    {"acct": "0000000000000004", "type": "02", "gross": 180000, "axis": "法人: national-only (no 5% local)"},
+    {"acct": "0000000000000005", "type": "03", "gross": 300000, "axis": "NISA: tax-exempt"},
+    {"acct": "0000000000000006", "type": "03", "gross": 88000,  "axis": "NISA: tax-exempt"},
+    {"acct": "0000000000000007", "type": "01", "gross": 19999, "axis": "一般: separate-truncation ¥1 divergence (sep 4061 vs combined 4062)"},
+    {"acct": "0000000000000008", "type": "01", "gross": 20000, "axis": "一般: separate==combined control (4063; defeats combined-minus-1 shortcut)"}
+  ]
+}

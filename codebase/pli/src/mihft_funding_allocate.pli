@@ -1,0 +1,30 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20191003  決済二課  新規作成 (資金引当)                    */
+/*--------------------------------------------------------------------*/
+mihft_funding_allocate: PROC OPTIONS(MAIN);
+   DCL SCFUND FILE RECORD UPDATE;
+   DCL SCAUDT FILE RECORD OUTPUT;
+   %INCLUDE SCFUNDC;
+   %INCLUDE SCAUDTC;
+   DCL EOF_FUND BIT(1) INIT('0'B);
+   DCL WK_AVAIL FIXED DEC(15,2) INIT(0);
+   ON ENDFILE(SCFUND) EOF_FUND = '1'B;
+   OPEN FILE(SCFUND) UPDATE; OPEN FILE(SCAUDT) OUTPUT;
+   READ FILE(SCFUND) INTO(SCFUND_REC);
+   DO WHILE(^EOF_FUND);
+      /* 所要額に対し利用可能残から引当。不足は引当不能として記録 */
+      WK_AVAIL = FD_ALLOC_AMT;
+      IF WK_AVAIL >= FD_REQ_AMT THEN DO;
+         FD_ALLOC_AMT = FD_REQ_AMT; FD_SHORT_AMT = 0; FD_STATUS_KBN = 'A';
+      END; ELSE DO;
+         FD_ALLOC_AMT = WK_AVAIL; FD_SHORT_AMT = FD_REQ_AMT - WK_AVAIL;
+         FD_STATUS_KBN = 'S';
+         AU_EVENT_KBN = 'FUND_SHORT'; AU_REF_ID = FD_CIF_NO;
+         WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+      END;
+      REWRITE FILE(SCFUND) FROM(SCFUND_REC);
+      READ FILE(SCFUND) INTO(SCFUND_REC);
+   END;
+   CLOSE FILE(SCFUND); CLOSE FILE(SCAUDT);
+END mihft_funding_allocate;

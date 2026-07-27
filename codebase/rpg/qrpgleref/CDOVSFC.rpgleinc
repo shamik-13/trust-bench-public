@@ -1,0 +1,12 @@
+       // CDOVSFC -- CDOVSF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdovsf_rec qualified;
+         ov_txn_id          char(10);
+         ov_card_no         char(16);
+         ov_txn_kbn         char(2);
+         ov_fee_kbn         char(2);
+         ov_fee_amt         packed(13:2);
+         ov_int_start_dt    packed(8:0);
+         ov_setl_amt        packed(13:2);
+         ov_setl_kbn        char(2);
+         ov_program_id      char(10);
+       end-ds;

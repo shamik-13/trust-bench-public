@@ -1,0 +1,10 @@
+       // CDFRDF2C -- CDFRDF2 レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdfrdf2_rec qualified;
+         fr_fraud_case_id   char(10);
+         fr_sale_id         char(10);
+         fr_card_no         char(16);
+         fr_merchant_code   char(4);
+         fr_risk_score      char(10);
+         fr_rule_hit_cd     char(10);
+         fr_case_status     char(2);
+       end-ds;

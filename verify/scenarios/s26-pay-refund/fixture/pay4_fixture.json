@@ -1,0 +1,15 @@
+{
+  "_note": "Parity mirror of the CSV fixtures for the s26 / D-2601 Java refund gate. The engine reads the CSVs directly; this records the golden(改定後 180日) vs start(旧 90日) decision per request. Decisive divergence: R2/R3 are in (90,180] days -> golden ACCEPTS, start DECLINES/WIN. The 180-day window lives only in the 返金規程 CD-RULE-REFUND.",
+  "window_golden_days": 180,
+  "window_start_days": 90,
+  "expected": {
+    "R1": {"days": 59,  "golden": "A", "start": "A", "why": "within both windows (control)"},
+    "R2": {"days": 120, "golden": "A", "start": "D", "why": "in (90,180] -> golden A, start D/WIN"},
+    "R3": {"days": 165, "golden": "A", "start": "D", "why": "in (90,180] -> golden A, start D/WIN"},
+    "R4": {"days": 273, "golden": "D", "start": "D", "why": "over both windows -> D/WIN (control)"},
+    "R5": {"days": 31,  "golden": "D", "start": "D", "why": "refund 6000 > orig 5000 -> D/AMT (control)"},
+    "R6": {"days": null,"golden": "D", "start": "D", "why": "no original O9 -> D/TXN (control)"},
+    "R7": {"days": 180, "golden": "A", "start": "D", "why": "exact boundary: golden A (<=180 inclusive), start D/WIN. pins window>=180"},
+    "R8": {"days": 181, "golden": "D", "start": "D", "why": "just over: golden D/WIN (>180), start D/WIN. pins window<=180 -> over-extended fix (e.g. 200d) fails"}
+  }
+}

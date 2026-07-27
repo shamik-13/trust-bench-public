@@ -1,0 +1,214 @@
+mihft_liquidity_window_check: PROC OPTIONS(MAIN);
+/**********************************************************************/
+/*  変更履歴                                                          */
+/*  版数    年月日      担当      概要                                */
+/*  01.00   2019/04/01  決済一課  新規作成                            */
+/*  01.01   2020/01/14  大野 修 (E-225)    資金引当時限の監査出力追加          */
+/*  01.02   2021/07/05  決済一課  VALUE-DT指定時の開閉区分検査へ変更  */
+/*  01.03   2023/10/02  渡辺 隆 (E-260)  休業日入力時の理由コード整理        */
+/**********************************************************************/
+
+   %INCLUDE SCCALFC;
+   %INCLUDE SCFUNDC;
+   %INCLUDE SCAUDTC;
+
+   DCL SCCALF_FILE FILE RECORD INPUT ENV(F RECSIZE(128));
+   DCL SCFUNDS_FILE FILE RECORD INPUT ENV(F RECSIZE(256));
+   DCL SCAUDT_FILE FILE RECORD OUTPUT ENV(F RECSIZE(256));
+   DCL SYSIN FILE STREAM INPUT;
+   DCL SYSPRINT FILE STREAM OUTPUT;
+
+   DCL EOF_CALF     BIT(1) INIT('0'B);
+   DCL EOF_FUND     BIT(1) INIT('0'B);
+   DCL ERR_SW       BIT(1) INIT('0'B);
+
+   DCL WK_VALUE_DT       CHAR(8);
+   DCL WK_CAL_DT         CHAR(8);
+   DCL WK_OPEN_TM        PIC '9999';
+   DCL WK_CLOSE_TM       PIC '9999';
+   DCL WK_SESS_KBN       CHAR(2);
+   DCL WK_CAL_FOUND      BIT(1) INIT('0'B);
+
+   DCL WK_REC_CNT        FIXED DEC(9) INIT(0);
+   DCL WK_OK_CNT         FIXED DEC(9) INIT(0);
+   DCL WK_NG_CNT         FIXED DEC(9) INIT(0);
+   DCL WK_SKIP_CNT       FIXED DEC(9) INIT(0);
+   DCL WK_AUD_SEQ        FIXED DEC(9) INIT(0);
+
+   DCL WK_AMT            FIXED DEC(15,2);
+   DCL WK_MSG            CHAR(80);
+   DCL WK_RSN_CD         CHAR(4);
+   DCL WK_OP_TS          CHAR(14) INIT('');
+
+   DCL 1 PARM_REC,
+         2 PARM_KEY      CHAR(12),
+         2 PARM_VALUE    CHAR(20);
+
+   DCL 1 CALF_SAVE LIKE SCCALF_REC;
+   DCL 1 FUND_SAVE LIKE SCFUND_REC;
+   DCL 1 AUD_SAVE  LIKE SCAUDT_REC;
+
+   ON ENDFILE(SCCALF_FILE) EOF_CALF = '1'B;
+   ON ENDFILE(SCFUNDS_FILE) EOF_FUND = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      PUT FILE(SYSPRINT) SKIP LIST('MIHFTLWC 異常終了  入出力または形式エラー');
+      GOTO ABEND_CLOSE;
+   END;
+
+   WK_VALUE_DT = '        ';
+
+   DO WHILE(WK_VALUE_DT = '        ');
+      GET FILE(SYSIN) EDIT(PARM_REC.PARM_KEY, PARM_REC.PARM_VALUE)
+          (A(12), A(20));
+      IF PARM_REC.PARM_KEY = 'VALUE-DT    ' THEN
+         WK_VALUE_DT = SUBSTR(PARM_REC.PARM_VALUE, 1, 8);
+   END;
+
+   OPEN FILE(SCCALF_FILE);
+   OPEN FILE(SCFUNDS_FILE);
+   OPEN FILE(SCAUDT_FILE);
+
+   EOF_CALF = '0'B;
+   WK_CAL_FOUND = '0'B;
+
+   DO WHILE(^EOF_CALF & ^WK_CAL_FOUND);
+      READ FILE(SCCALF_FILE) INTO(CALF_SAVE);
+      IF ^EOF_CALF THEN DO;
+         IF CALF_SAVE.CA_SESS_DT = WK_VALUE_DT THEN DO;
+            WK_CAL_FOUND = '1'B;
+            WK_CAL_DT    = CALF_SAVE.CA_SESS_DT;
+            WK_OPEN_TM   = SUBSTR(CALF_SAVE.CA_OPEN_TS, 9, 4);
+            WK_CLOSE_TM  = SUBSTR(CALF_SAVE.CA_CLOSE_TS, 9, 4);
+            WK_SESS_KBN  = CALF_SAVE.CA_SESS_KBN;
+         END;
+      END;
+   END;
+
+   IF ^WK_CAL_FOUND THEN DO;
+      WK_RSN_CD = 'E001';
+      WK_MSG = 'カレンダ未登録 VALUE-DT=' || WK_VALUE_DT;
+      CALL WRITE_AUDIT('          ', '        ', 'P ', WK_RSN_CD);
+      GOTO NORMAL_CLOSE;
+   END;
+
+   IF WK_SESS_KBN ^= 'B' & WK_SESS_KBN ^= 'H' THEN DO;
+      WK_RSN_CD = 'E002';
+      WK_MSG = 'セッション区分不正 VALUE-DT=' || WK_VALUE_DT ||
+               ' SESS-KBN=' || WK_SESS_KBN;
+      CALL WRITE_AUDIT('          ', WK_VALUE_DT, 'P ', WK_RSN_CD);
+      GOTO NORMAL_CLOSE;
+   END;
+
+   EOF_FUND = '0'B;
+
+   DO WHILE(^EOF_FUND);
+      READ FILE(SCFUNDS_FILE) INTO(FUND_SAVE);
+      IF ^EOF_FUND THEN DO;
+         WK_REC_CNT = WK_REC_CNT + 1;
+
+         IF FUND_SAVE.FD_VALUE_DT ^= WK_VALUE_DT THEN DO;
+            WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         END;
+         ELSE DO;
+            WK_AMT    = FUND_SAVE.FD_ALLOC_AMT;
+            WK_RSN_CD = '    ';
+            WK_MSG    = ' ';
+
+            SELECT;
+               WHEN(FUND_SAVE.FD_CCY_KBN ^= '01' &
+                    FUND_SAVE.FD_CCY_KBN ^= '02') DO;
+                  WK_RSN_CD = 'E101';
+                  WK_MSG = '通貨区分不正 資金キー=' ||
+                           FUND_SAVE.FD_FUND_KEY;
+               END;
+
+               WHEN(FUND_SAVE.FD_STATUS_KBN ^= 'P' &
+                    FUND_SAVE.FD_STATUS_KBN ^= 'S' &
+                    FUND_SAVE.FD_STATUS_KBN ^= 'F') DO;
+                  WK_RSN_CD = 'E102';
+                  WK_MSG = '状態区分不正 資金キー=' ||
+                           FUND_SAVE.FD_FUND_KEY;
+               END;
+
+               WHEN(WK_AMT <= 0) DO;
+                  WK_RSN_CD = 'E104';
+                  WK_MSG = '資金引当金額不正 資金キー=' ||
+                           FUND_SAVE.FD_FUND_KEY;
+               END;
+
+               WHEN(WK_SESS_KBN = 'H') DO;
+                  WK_RSN_CD = 'W201';
+                  WK_MSG = '休業日のため引当不可 VALUE-DT=' ||
+                           FUND_SAVE.FD_VALUE_DT;
+               END;
+
+               OTHERWISE DO;
+                  WK_RSN_CD = 'A000';
+                  WK_MSG = '許可時限内 VALUE-DT=' || WK_VALUE_DT ||
+                           ' 開始=' || WK_OPEN_TM ||
+                           ' 終了=' || WK_CLOSE_TM;
+               END;
+            END;
+
+            IF WK_RSN_CD = 'A000' THEN WK_OK_CNT = WK_OK_CNT + 1;
+            ELSE WK_NG_CNT = WK_NG_CNT + 1;
+
+            CALL WRITE_AUDIT(FUND_SAVE.FD_FUND_KEY,
+                             FUND_SAVE.FD_VALUE_DT,
+                             FUND_SAVE.FD_STATUS_KBN,
+                             WK_RSN_CD);
+         END;
+      END;
+   END;
+
+NORMAL_CLOSE:
+   CLOSE FILE(SCCALF_FILE);
+   CLOSE FILE(SCFUNDS_FILE);
+   CLOSE FILE(SCAUDT_FILE);
+
+   PUT FILE(SYSPRINT) SKIP LIST('MIHFTLWC 正常終了');
+   PUT FILE(SYSPRINT) SKIP LIST('VALUE-DT=', WK_VALUE_DT,
+                                ' SESS-KBN=', WK_SESS_KBN,
+                                ' OPEN=', WK_OPEN_TM,
+                                ' CLOSE=', WK_CLOSE_TM);
+   PUT FILE(SYSPRINT) SKIP LIST('入力=', WK_REC_CNT,
+                                ' 許可=', WK_OK_CNT,
+                                ' 否認=', WK_NG_CNT,
+                                ' 対象外=', WK_SKIP_CNT);
+   RETURN;
+
+ABEND_CLOSE:
+   IF ERR_SW THEN DO;
+      CLOSE FILE(SCCALF_FILE);
+      CLOSE FILE(SCFUNDS_FILE);
+      CLOSE FILE(SCAUDT_FILE);
+   END;
+   SIGNAL ERROR;
+
+WRITE_AUDIT: PROC(P_REQ_NO, P_VALUE_DT, P_STATUS_KBN, P_RSN_CD);
+
+   DCL P_REQ_NO      CHAR(10);
+   DCL P_VALUE_DT    CHAR(8);
+   DCL P_STATUS_KBN  CHAR(2);
+   DCL P_RSN_CD      CHAR(4);
+   DCL WK_SEQ_C      CHAR(10);
+
+   WK_AUD_SEQ = WK_AUD_SEQ + 1;
+   WK_SEQ_C   = EDIT(WK_AUD_SEQ, '9999999999');
+
+   AUD_SAVE.AU_AUDIT_ID      = WK_SEQ_C;
+   AUD_SAVE.AU_PGM_ID        = 'MIHFTLWC';
+   AUD_SAVE.AU_BUS_DT        = P_VALUE_DT;
+   AUD_SAVE.AU_REF_ID        = P_REQ_NO;
+   AUD_SAVE.AU_EVENT_KBN     = SUBSTR(P_RSN_CD, 1, 2);
+   AUD_SAVE.AU_BEFORE_STATUS = P_STATUS_KBN;
+   AUD_SAVE.AU_AFTER_STATUS  = WK_SESS_KBN;
+   AUD_SAVE.AU_OP_TS         = WK_OP_TS;
+
+   WRITE FILE(SCAUDT_FILE) FROM(AUD_SAVE);
+
+END WRITE_AUDIT;
+
+END mihft_liquidity_window_check;

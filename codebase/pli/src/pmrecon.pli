@@ -1,0 +1,274 @@
+/*-------------------------------------------------------------------*/
+/*  PROGRAM-ID : PMRECON                                             */
+/*  DESCRIPTION: 収納残高照合バッチ (Premium Reconciliation Batch)    */
+/*  AUTHOR     : システム保全部                                       */
+/*  DATE       : 2025-09-12                                          */
+/*-------------------------------------------------------------------*/
+/*  変更履歴 / CHANGE HISTORY                                         */
+/*-------------------------------------------------------------------*/
+/*  版数  |  年月日   |  担当     |  概要                             */
+/*------|-----------|----------|-------------------------------*/
+/*  001 | 2023-11-15| 営業推進 | 初版作成                         */
+/*  002 | 2024-03-22| 決済部門 | 不整合検出ロジック追加            */
+/*  003 | 2024-08-10| 監査部門 | 請求月単位処理対応                */
+/*  004 | 2025-01-18| 決済部門 | 払済区分矛盾チェック強化          */
+/*  005 | 2025-09-12| システム | 日跨り決済対応・エラー処理見直し  */
+/*-------------------------------------------------------------------*/
+
+pmrecon: PROC OPTIONS(MAIN);
+
+  %INCLUDE LFBILFC;    /* 請求マスタF レコード定義                 */
+  %INCLUDE LFPAYF2C;   /* 入金F v2 レコード定義                    */
+  %INCLUDE LFCONFC;    /* 契約マスタF レコード定義                 */
+  %INCLUDE LFAUDLC;    /* 監査ログF レコード定義                   */
+
+  /* ========== 作業領域 (Working Storage) ==========               */
+
+  DCL 1 WRK,
+    2 PROC-YMDH        FIXED DEC(10) INIT(0),  /* 処理年月日時刻   */
+    2 PROC-YM          FIXED DEC(6)  INIT(0),  /* 処理年月         */
+    2 PROC-DD          FIXED DEC(2)  INIT(0),  /* 処理日           */
+    2 TOTAL-BIL-CNT    FIXED DEC(9)  INIT(0),  /* 請求件数累計     */
+    2 MATCH-CNT        FIXED DEC(9)  INIT(0),  /* 照合済件数       */
+    2 UNMATCH-CNT      FIXED DEC(9)  INIT(0),  /* 不整合件数       */
+    2 CONF-ERR-CNT     FIXED DEC(9)  INIT(0),  /* 契約情報矛盾件数 */
+    2 VARIANCE-AMT     FIXED DEC(15,2) INIT(0),/* 累積差異額       */
+    2 ACCUM-PAY-AMT    FIXED DEC(15,2) INIT(0),/* 累積入金額       */
+    2 CURRENT-CON-NO   FIXED DEC(10) INIT(0),  /* 当行契約番号     */
+    2 CURRENT-APPLY-YM FIXED DEC(6)  INIT(0),  /* 当行適用年月     */
+    2 BIL-VAR-AMT      FIXED DEC(15,2) INIT(0),/* 請求単位差異額   */
+    2 CONF-PAID-KBN    CHAR(1),                /* 契約払済区分     */
+    2 RC-IDX           FIXED DEC(5)  INIT(0);  /* ループ制御       */
+
+  DCL 1 AUDIT-REC,
+    2 AUD-OPE-DATE     FIXED DEC(8),
+    2 AUD-CON-NO       FIXED DEC(10),
+    2 AUD-OPE-TYPE-KBN CHAR(2),
+    2 AUD-RESULT-KBN   CHAR(2),
+    2 AUD-BIL-AMT      FIXED DEC(15,2),
+    2 AUD-PAY-AMT      FIXED DEC(15,2),
+    2 AUD-VARIANCE     FIXED DEC(15,2),
+    2 AUD-REMARK       CHAR(30);
+
+  DCL 1 SUMMARY-REC,
+    2 SUM-TOTAL-CNT    FIXED DEC(9),
+    2 SUM-EXCEPT-CNT   FIXED DEC(9),
+    2 SUM-VARIANCE     FIXED DEC(15,2),
+    2 SUM-AUDIT-TM     FIXED DEC(10);
+
+  DCL 1 FILE-STAT,
+    2 RET-CODE         FIXED DEC(5)  INIT(0),
+    2 ERR-LINE-NO      FIXED DEC(6)  INIT(0),
+    2 ERR-FILE-NAME    CHAR(8),
+    2 ERR-MSG          CHAR(60);
+
+  /* ========== ファイル定義 (File Declaration) ==========         */
+
+  DCL LFBILF_IN      FILE RECORD SEQUENTIAL INPUT;
+  DCL LFPAYF_IN      FILE RECORD SEQUENTIAL INPUT;
+  DCL LFCONF_IN      FILE RECORD SEQUENTIAL INPUT;
+  DCL LFAUDL_OUT     FILE RECORD SEQUENTIAL OUTPUT;
+  DCL RPT_OUT        FILE RECORD SEQUENTIAL OUTPUT;
+
+  /* ========== エラーハンドリング (Error Handling) ==========    */
+
+  ON ENDFILE(LFBILF_IN) BEGIN;
+    RET-CODE = 1;
+    GOTO CLOSE_LFBILF;
+  END;
+
+  ON ENDFILE(LFPAYF_IN) BEGIN;
+    RET-CODE = 1;
+    GOTO CLOSE_LFPAYF;
+  END;
+
+  ON ENDFILE(LFCONF_IN) BEGIN;
+    RET-CODE = 1;
+    GOTO CLOSE_LFCONF;
+  END;
+
+  ON ERROR(LFBILF_IN) BEGIN;
+    RET-CODE = 201;
+    ERR-FILE-NAME = 'LFBILF  ';
+    ERR-MSG = 'READ ERROR';
+    CALL WRITE_ERROR_LOG;
+    GOTO CLOSE_LFBILF;
+  END;
+
+  ON ERROR(LFPAYF_IN) BEGIN;
+    RET-CODE = 202;
+    ERR-FILE-NAME = 'LFPAYF  ';
+    ERR-MSG = 'READ ERROR';
+    CALL WRITE_ERROR_LOG;
+    GOTO CLOSE_LFPAYF;
+  END;
+
+  ON ERROR(LFCONF_IN) BEGIN;
+    RET-CODE = 203;
+    ERR-FILE-NAME = 'LFCONF  ';
+    ERR-MSG = 'READ ERROR';
+    CALL WRITE_ERROR_LOG;
+    GOTO CLOSE_LFCONF;
+  END;
+
+  ON ERROR(LFAUDL_OUT) BEGIN;
+    RET-CODE = 301;
+    ERR-FILE-NAME = 'LFAUDL  ';
+    ERR-MSG = 'WRITE ERROR';
+    CALL WRITE_ERROR_LOG;
+    GOTO END_PROC;
+  END;
+
+  /* ========== 初期化・ファイルOPEN (Initialize & Open) =====   */
+
+  TOTAL-BIL-CNT = 0;
+  MATCH-CNT = 0;
+  UNMATCH-CNT = 0;
+  CONF-ERR-CNT = 0;
+  VARIANCE-AMT = 0;
+
+  OPEN FILE(LFBILF_IN);
+  OPEN FILE(LFPAYF_IN);
+  OPEN FILE(LFCONF_IN);
+  OPEN FILE(LFAUDL_OUT) OUTPUT;
+  OPEN FILE(RPT_OUT) OUTPUT;
+
+  /* ========== 請求マスタ読込メインループ ==========            */
+
+  READ FILE(LFBILF_IN) INTO(LFBIL);
+
+  DO WHILE(RET-CODE = 0);
+
+    /* 請求月の対象チェック                                     */
+    IF LFBIL.BIL-YM ^= PROC-YM THEN DO;
+      READ FILE(LFBILF_IN) INTO(LFBIL);
+      ITERATE;
+    END;
+
+    /* 請求ステータスチェック：開始('10') or 催告中('15')      */
+    IF LFBIL.BIL-STATUS-KBN ^= '10' & 
+       LFBIL.BIL-STATUS-KBN ^= '15' THEN DO;
+      READ FILE(LFBILF_IN) INTO(LFBIL);
+      ITERATE;
+    END;
+
+    TOTAL-BIL-CNT = TOTAL-BIL-CNT + 1;
+    CURRENT-CON-NO = LFBIL.CON-NO;
+    CURRENT-APPLY-YM = LFBIL.APPLY-YM;
+    ACCUM-PAY-AMT = 0;
+    BIL-VAR-AMT = 0;
+
+    /* ========== 入金Fから当該契約・年月の入金集計 ==========  */
+
+    READ FILE(LFPAYF_IN) INTO(LFPAY);
+
+    DO WHILE(RET-CODE = 0);
+      IF LFPAY.CON-NO = CURRENT-CON-NO & 
+         LFPAY.APPLY-YM = CURRENT-APPLY-YM THEN DO;
+        ACCUM-PAY-AMT = ACCUM-PAY-AMT + LFPAY.PAY-AMT;
+        MATCH-CNT = MATCH-CNT + 1;
+        READ FILE(LFPAYF_IN) INTO(LFPAY);
+      END;
+      ELSE DO;
+        /* 異なる契約番号・年月に到達 → 集計終了             */
+        LEAVE;
+      END;
+    END;
+
+    /* ========== 金額差異チェック（入金 vs 請求） ==========   */
+
+    BIL-VAR-AMT = LFBIL.BIL-AMT - ACCUM-PAY-AMT;
+
+    IF ABS(BIL-VAR-AMT) > 0.01 THEN DO;
+      UNMATCH-CNT = UNMATCH-CNT + 1;
+      VARIANCE-AMT = VARIANCE-AMT + ABS(BIL-VAR-AMT);
+
+      /* 監査ログレコード作成・出力                           */
+      AUD-OPE-DATE = PROC-YMDH;
+      AUD-CON-NO = LFBIL.CON-NO;
+      AUD-OPE-TYPE-KBN = 'RC';
+      AUD-RESULT-KBN = 'NG';
+      AUD-BIL-AMT = LFBIL.BIL-AMT;
+      AUD-PAY-AMT = ACCUM-PAY-AMT;
+      AUD-VARIANCE = BIL-VAR-AMT;
+      AUD-REMARK = 'AMOUNT-MISMATCH';
+
+      WRITE FILE(LFAUDL_OUT) FROM(AUDIT-REC);
+    END;
+
+    /* ========== 契約マスタ払済区分チェック ==========        */
+
+    READ FILE(LFCONF_IN) INTO(LFCONF);
+
+    IF RET-CODE = 0 & LFCONF.CON-NO = LFBIL.CON-NO THEN DO;
+      CONF-PAID-KBN = LFCONF.PAID-KBN;
+
+      /* 請求状態と払済区分の矛盾検出                         */
+      IF LFBIL.BIL-STATUS-KBN = '10' & 
+         CONF-PAID-KBN = '1' THEN DO;
+        CONF-ERR-CNT = CONF-ERR-CNT + 1;
+
+        AUD-OPE-DATE = PROC-YMDH;
+        AUD-CON-NO = LFBIL.CON-NO;
+        AUD-OPE-TYPE-KBN = 'RC';
+        AUD-RESULT-KBN = 'NG';
+        AUD-REMARK = 'STATUS-MISMATCH';
+
+        WRITE FILE(LFAUDL_OUT) FROM(AUDIT-REC);
+      END;
+    END;
+
+    READ FILE(LFBILF_IN) INTO(LFBIL);
+
+  END; /* DO WHILE 請求マスタ読込ループ */
+
+CLOSE_LFBILF:
+  CLOSE FILE(LFBILF_IN);
+
+CLOSE_LFPAYF:
+  CLOSE FILE(LFPAYF_IN);
+
+CLOSE_LFCONF:
+  CLOSE FILE(LFCONF_IN);
+
+  /* ========== pmaudgen 呼出し（日次監査確定） ==========      */
+
+  CALL pmaudgen(PROC-YMDH, RET-CODE);
+
+  IF RET-CODE ^= 0 THEN DO;
+    ERR-MSG = 'PMAUDGEN CALL FAILED';
+    CALL WRITE_ERROR_LOG;
+    GOTO END_AUDIT_OUT;
+  END;
+
+  /* ========== サマリレポート出力 ==========                   */
+
+  SUM-TOTAL-CNT = TOTAL-BIL-CNT;
+  SUM-EXCEPT-CNT = UNMATCH-CNT + CONF-ERR-CNT;
+  SUM-VARIANCE = VARIANCE-AMT;
+  SUM-AUDIT-TM = PROC-YMDH;
+
+  WRITE FILE(RPT_OUT) FROM(SUMMARY-REC);
+
+END_AUDIT_OUT:
+  CLOSE FILE(LFAUDL_OUT);
+  CLOSE FILE(RPT_OUT);
+
+  IF RET-CODE = 0 THEN RET-CODE = 0;
+  GOTO END_PROC;
+
+END_PROC:
+
+  /* ========== 終了 ==========                                  */
+  RETURN;
+
+  /* ========== サブルーチン群 ==========                         */
+
+WRITE_ERROR_LOG: PROC;
+  /* エラーログ出力                                             */
+  DECLARE LOG-REC CHAR(100);
+  LOG-REC = 'ERROR: ' || 'CODE=' || RET-CODE || 
+            ' FILE=' || ERR-FILE-NAME || ' MSG=' || ERR-MSG;
+END WRITE_ERROR_LOG;
+
+END pmrecon;

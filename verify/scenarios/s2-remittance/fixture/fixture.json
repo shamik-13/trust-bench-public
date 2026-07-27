@@ -1,0 +1,161 @@
+{
+  "_comment": "Inbound-reject behavioral fixture. Each remittance is designed to exercise one reject code (or accept). Names are ASCII so byte-compare is deterministic; TG912S still implements real kana normalization (the space-collapse/trim path is what these cases exercise). amount_limit=10,000,000 (data_domain). Account status '01'=valid. START emits only N1 + handles only type 10; GOLDEN applies full taxonomy + 5-type dispatch.",
+  "accounts": [
+    {
+      "acct_no": "0000000000000001",
+      "branch": "001",
+      "acct_type": "1",
+      "cust": "C0001",
+      "name": "YAMADA TARO",
+      "status": "01"
+    },
+    {
+      "acct_no": "0000000000000002",
+      "branch": "001",
+      "acct_type": "1",
+      "cust": "C0002",
+      "name": "SUZUKI HANAKO",
+      "status": "01"
+    },
+    {
+      "acct_no": "0000000000000003",
+      "branch": "002",
+      "acct_type": "1",
+      "cust": "C0003",
+      "name": "TANAKA ICHIRO",
+      "status": "03"
+    }
+  ],
+  "remittances": [
+    {
+      "seq": "M01",
+      "type": "10",
+      "payee_acct": "0000000000000001",
+      "payee_name": "YAMADA  TARO",
+      "amount": 500000,
+      "expect": "ACCEPT"
+    },
+    {
+      "seq": "M02",
+      "type": "10",
+      "payee_acct": "0000000000000001",
+      "payee_name": "SUZUKI TARO",
+      "amount": 500000,
+      "expect": "N1"
+    },
+    {
+      "seq": "M03",
+      "type": "10",
+      "payee_acct": "9999999999999999",
+      "payee_name": "NOBODY",
+      "amount": 500000,
+      "expect": "A1"
+    },
+    {
+      "seq": "M04",
+      "type": "10",
+      "payee_acct": "0000000000000003",
+      "payee_name": "TANAKA ICHIRO",
+      "amount": 500000,
+      "expect": "A2"
+    },
+    {
+      "seq": "M05",
+      "type": "10",
+      "payee_acct": "",
+      "payee_name": "YAMADA TARO",
+      "amount": 500000,
+      "expect": "F1"
+    },
+    {
+      "seq": "M06",
+      "type": "10",
+      "payee_acct": "0000000000000002",
+      "payee_name": "SUZUKI HANAKO",
+      "amount": 20000000,
+      "expect": "L1"
+    },
+    {
+      "seq": "M07",
+      "type": "99",
+      "payee_acct": "0000000000000002",
+      "payee_name": "SUZUKI HANAKO",
+      "amount": 500000,
+      "expect": "S1"
+    },
+    {
+      "seq": "M08",
+      "type": "20",
+      "payee_acct": "0000000000000002",
+      "payee_name": "SUZUKI HANAKO",
+      "amount": 500000,
+      "expect": "ACCEPT"
+    },
+    {
+      "seq": "M09",
+      "type": "90",
+      "payee_acct": "0000000000000001",
+      "payee_name": "YAMADA TARO",
+      "amount": 500000,
+      "expect": "ROUTE"
+    }
+  ],
+  "_comment_corr": "TG330B 訂正 (correction-output) cases — S2-C4. type 90 = correction; msg(1:2) = 訂正区分 (01 名義 / 02 口座 / 03 銀行). GOLDEN writes a signed TGOUTCF record for each VALID correction; START produces no TGOUTCF output at all. expect=ROUTE keeps them benign for the TG214B reject-log (S2-PC2). These are loaded into TGINRMF alongside the remittances.",
+  "corrections": [
+    {
+      "seq": "9000000001",
+      "type": "90",
+      "msg": "01",
+      "payee_acct": "0000000000000001",
+      "payee_name": "YAMADA TARO",
+      "amount": 500000,
+      "expect": "ROUTE",
+      "correction": {
+        "corr_type": "01",
+        "expect_written": true
+      }
+    },
+    {
+      "seq": "9000000002",
+      "type": "90",
+      "msg": "02",
+      "payee_acct": "0000000000000002",
+      "payee_name": "SUZUKI HANAKO",
+      "amount": 800000,
+      "expect": "ROUTE",
+      "correction": {
+        "corr_type": "02",
+        "expect_written": true
+      }
+    },
+    {
+      "seq": "9000000003",
+      "type": "90",
+      "msg": "01",
+      "payee_acct": "0000000000000001",
+      "payee_name": "YAMADA TARO",
+      "amount": 20000000,
+      "expect": "ROUTE",
+      "correction": {
+        "corr_type": "01",
+        "expect_written": false,
+        "why": "over amount limit -> L1 reject, no TGOUTCF"
+      }
+    },
+    {
+      "seq": "9000000004",
+      "type": "90",
+      "msg": "09",
+      "payee_acct": "0000000000000001",
+      "payee_name": "YAMADA TARO",
+      "amount": 500000,
+      "expect": "ROUTE",
+      "correction": {
+        "corr_type": "09",
+        "expect_written": false,
+        "why": "invalid 訂正区分 -> F1 reject, no TGOUTCF"
+      }
+    }
+  ],
+  "amount_limit_yen": 10000000
+}

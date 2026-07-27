@@ -1,0 +1,229 @@
+/*--------------------------------------------------------------------*/
+/* PROGRAM : PMSURRCAL                                               */
+/* TITLE   : 解約返戻金計算バッチ                                      */
+/* DESC    : 月次解約返戻金計算処理                                    */
+/*--------------------------------------------------------------------*/
+/* 変更履歴                                                            */
+/*--------------------------------------------------------------------*/
+/* 版数 | 年月日   | 担当   | 概要                                    */
+/*-------|----------|--------|-------------------------------------- */
+/* 1.0  | 2009.04 | 金子S  | 新規作成                              */
+/* 1.1  | 2011.08 | 田中M  | 返戻金テーブル300→200件に変更         */
+/* 1.2  | 2015.06 | 鈴木Y  | 経過月数計算ロジック修正(閏年対応)   */
+/* 2.0  | 2018.11 | 佐藤K  | 新商品対応・テーブルインデックス      */
+/*      |          |        | 拡張(型別+年度)                       */
+/*--------------------------------------------------------------------*/
+
+pmsurrcal: PROC OPTIONS(MAIN);
+
+   DCL 1 WS_CTRL,
+       2 WS_REC_COUNT         FIXED DEC(9)   INIT(0),
+       2 WS_ERR_COUNT         FIXED DEC(9)   INIT(0),
+       2 WS_CALC_COUNT        FIXED DEC(9)   INIT(0),
+       2 WS_EOF_FLG           CHAR(1)        INIT('N'),
+       2 WS_RETURN_CODE       FIXED DEC(9)   INIT(0);
+
+   DCL 1 WS_DATE_WORK,
+       2 WS_CURNT_DT          CHAR(8),
+       2 WS_START_DT          CHAR(8),
+       2 WS_MONTHS            FIXED DEC(5)   INIT(0),
+       2 WS_CALC_YY           FIXED DEC(4)   INIT(0),
+       2 WS_CALC_MM           FIXED DEC(2)   INIT(0),
+       2 WS_CALC_DD           FIXED DEC(2)   INIT(0),
+       2 WS_START_YY          FIXED DEC(4)   INIT(0),
+       2 WS_START_MM          FIXED DEC(2)   INIT(0),
+       2 WS_START_DD          FIXED DEC(2)   INIT(0),
+       2 WS_YEAR_DIFF         FIXED DEC(4)   INIT(0),
+       2 WS_MONTH_DIFF        FIXED DEC(2)   INIT(0);
+
+   DCL 1 WS_CALC_WORK,
+       2 WS_SURR_RATE         FIXED DEC(5,4) INIT(0),
+       2 WS_FACE_AMT          FIXED DEC(15,0) INIT(0),
+       2 WS_GROSS_SURR        FIXED DEC(15,2) INIT(0),
+       2 WS_NET_SURR          FIXED DEC(15,2) INIT(0),
+       2 WS_PRINCIPAL_AMT     FIXED DEC(15,2) INIT(0),
+       2 WS_INTEREST_AMT      FIXED DEC(15,2) INIT(0),
+       2 WS_RATE_TABLE_IDX    FIXED DEC(3)   INIT(0),
+       2 WS_PROD_TYPE_IDX     FIXED DEC(2)   INIT(0),
+       2 WS_YEAR_BUCKET       FIXED DEC(2)   INIT(0);
+
+   /* 返戻金テーブル: 商品型別×経過年度別 (200エントリ)              */
+   DCL WS_SURR_RATE_TBL(10,20) FIXED DEC(5,4) INIT(
+       /* 型別01(定期保険)                                           */
+       0.0000, 0.0050, 0.0100, 0.0150, 0.0250, 0.0350, 0.0450, 0.0550,
+       0.0650, 0.0750, 0.0850, 0.0900, 0.0950, 0.0980, 0.0990, 0.0995,
+       0.0998, 0.0999, 0.1000, 0.1000,
+       /* 型別02(終身保険)                                           */
+       0.0000, 0.0080, 0.0160, 0.0240, 0.0320, 0.0450, 0.0580, 0.0710,
+       0.0840, 0.0950, 0.1050, 0.1120, 0.1180, 0.1220, 0.1250, 0.1270,
+       0.1280, 0.1285, 0.1290, 0.1295,
+       /* 型別03(養老保険)                                           */
+       0.0000, 0.0120, 0.0240, 0.0360, 0.0480, 0.0600, 0.0720, 0.0840,
+       0.0950, 0.1050, 0.1150, 0.1230, 0.1300, 0.1360, 0.1400, 0.1430,
+       0.1450, 0.1460, 0.1465, 0.1470,
+       /* 型別04(学資保険)                                           */
+       0.0000, 0.0100, 0.0200, 0.0300, 0.0400, 0.0520, 0.0640, 0.0760,
+       0.0880, 0.0990, 0.1090, 0.1170, 0.1240, 0.1290, 0.1330, 0.1360,
+       0.1380, 0.1390, 0.1395, 0.1400,
+       /* 型別05(変額保険)                                           */
+       0.0000, 0.0060, 0.0120, 0.0180, 0.0270, 0.0370, 0.0470, 0.0570,
+       0.0670, 0.0770, 0.0860, 0.0920, 0.0970, 0.1000, 0.1020, 0.1035,
+       0.1045, 0.1050, 0.1052, 0.1055,
+       /* 型別06～10(予備)                                          */
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+       0.0000, 0.0000, 0.0000, 0.0000
+   );
+
+   /* ファイル宣言                                                    */
+   DCL SURR_INP_FILE RECORD INPUT VARIABLE;
+   DCL SURR_OUT_FILE RECORD OUTPUT VARIABLE;
+
+   %INCLUDE LFCONFC;      /* 契約マスタレコード                       */
+   %INCLUDE LFPLNFC;      /* 保険料/ローンレコード                    */
+   %INCLUDE LFSURFC;      /* 返戻金計算出力レコード                   */
+
+   /* ENDFILE/ERROR処理                                              */
+   ON ENDFILE(SURR_INP_FILE) BEGIN;
+      WS_EOF_FLG = 'Y';
+   END;
+
+   ON ERROR BEGIN;
+      WS_ERR_COUNT = WS_ERR_COUNT + 1;
+      SIGNAL ERROR;
+   END;
+
+   /* ファイルOPEN                                                    */
+   OPEN FILE(SURR_INP_FILE)  INPUT;
+   OPEN FILE(SURR_OUT_FILE)  OUTPUT;
+
+   /* 当日日付取得                                                    */
+   WS_CURNT_DT = SUBSTR(DATETIME(), 1, 8);
+
+   /* 入力ファイル読込ループ                                          */
+   DO WHILE(WS_EOF_FLG = 'N');
+      READ FILE(SURR_INP_FILE) INTO(INPUT_REC);
+
+      IF WS_EOF_FLG = 'Y' THEN LEAVE;
+
+      WS_REC_COUNT = WS_REC_COUNT + 1;
+
+      /*  契約マスタ(LFCONF)より責任開始日を取得                      */
+      WS_START_DT = LFCONF.RESP_START_DT;
+
+      /* 経過月数を計算 (責任開始日～当日)                            */
+      PERFORM CALC_MONTH_DIFF;
+
+      /* 経過年度より返戻金テーブルのインデックスを決定               */
+      IF WS_MONTHS >= 0 & WS_MONTHS <= 11 THEN
+         WS_YEAR_BUCKET = 1;
+      ELSE IF WS_MONTHS >= 12 & WS_MONTHS <= 23 THEN
+         WS_YEAR_BUCKET = 2;
+      ELSE IF WS_MONTHS >= 24 & WS_MONTHS <= 35 THEN
+         WS_YEAR_BUCKET = 3;
+      ELSE IF WS_MONTHS >= 36 & WS_MONTHS <= 47 THEN
+         WS_YEAR_BUCKET = 4;
+      ELSE IF WS_MONTHS >= 48 & WS_MONTHS <= 59 THEN
+         WS_YEAR_BUCKET = 5;
+      ELSE IF WS_MONTHS >= 60 & WS_MONTHS <= 71 THEN
+         WS_YEAR_BUCKET = 6;
+      ELSE IF WS_MONTHS >= 72 & WS_MONTHS <= 83 THEN
+         WS_YEAR_BUCKET = 7;
+      ELSE IF WS_MONTHS >= 84 & WS_MONTHS <= 95 THEN
+         WS_YEAR_BUCKET = 8;
+      ELSE IF WS_MONTHS >= 96 & WS_MONTHS <= 107 THEN
+         WS_YEAR_BUCKET = 9;
+      ELSE
+         WS_YEAR_BUCKET = 10;
+
+      /* 商品型別インデックス (INPUT_REC.PROD_TYPE_KBN から)          */
+      WS_PROD_TYPE_IDX = DECIMAL(INPUT_REC.PROD_TYPE_KBN, 2, 0);
+      IF WS_PROD_TYPE_IDX < 1 | WS_PROD_TYPE_IDX > 10 THEN
+         WS_PROD_TYPE_IDX = 1;
+
+      /* 返戻金テーブルより率を取得                                   */
+      WS_SURR_RATE = WS_SURR_RATE_TBL(WS_PROD_TYPE_IDX, WS_YEAR_BUCKET);
+
+      /* 保険金額を取得                                               */
+      WS_FACE_AMT = LFCONF.INSURANCE_AMT;
+
+      /* 返戻金 = 保険金額 × 返戻率                                    */
+      WS_GROSS_SURR = WS_FACE_AMT * WS_SURR_RATE;
+
+      /* 保険料ローンファイル(LFPLNF)より元金・利息を取得             */
+      WS_PRINCIPAL_AMT = LFPLNF.PLN_PRINCIPAL_AMT;
+      WS_INTEREST_AMT  = LFPLNF.PLN_TOTAL_INT_AMT;
+
+      /* 純解約返戻金 = 粗返戻金 - 元金 - 利息                        */
+      WS_NET_SURR = WS_GROSS_SURR - WS_PRINCIPAL_AMT - WS_INTEREST_AMT;
+
+      IF WS_NET_SURR < 0.00 THEN
+         WS_NET_SURR = 0.00;
+
+      /* 出力レコード構築                                              */
+      OUTPUT_REC.SURR_POLNO    = INPUT_REC.POLICY_NO;
+      OUTPUT_REC.SURR_CALC_DT  = WS_CURNT_DT;
+      OUTPUT_REC.SURR_STATUS_KBN = '10';  /* 計算済                   */
+      OUTPUT_REC.SURR_GROSS_AMT = WS_GROSS_SURR;
+      OUTPUT_REC.SURR_VAL_AMT   = WS_NET_SURR;
+      OUTPUT_REC.SURR_MONTHS    = WS_MONTHS;
+
+      WRITE FILE(SURR_OUT_FILE) FROM(OUTPUT_REC);
+
+      WS_CALC_COUNT = WS_CALC_COUNT + 1;
+
+   END;  /* ループ終了                                                */
+
+   /* ファイルCLOSE                                                   */
+   CLOSE FILE(SURR_INP_FILE);
+   CLOSE FILE(SURR_OUT_FILE);
+
+   /* 集計情報出力 (監査ログ)                                         */
+   PUT LIST('==== PMSURRCAL 処理完了 ====');
+   PUT LIST('入力件数: ', WS_REC_COUNT);
+   PUT LIST('計算件数: ', WS_CALC_COUNT);
+   PUT LIST('エラー件数: ', WS_ERR_COUNT);
+
+   IF WS_ERR_COUNT > 0 THEN
+      WS_RETURN_CODE = 8;
+   ELSE
+      WS_RETURN_CODE = 0;
+
+   STOP RUN;
+
+   /* ---- 内部サブルーチン ----                                     */
+
+   CALC_MONTH_DIFF:
+      /*  責任開始日(YYYYMMDD) → 当日(YYYYMMDD) の月数差を計算       */
+      WS_CALC_YY = DECIMAL(SUBSTR(WS_CURNT_DT, 1, 4), 4, 0);
+      WS_CALC_MM = DECIMAL(SUBSTR(WS_CURNT_DT, 5, 2), 2, 0);
+      WS_CALC_DD = DECIMAL(SUBSTR(WS_CURNT_DT, 7, 2), 2, 0);
+
+      WS_START_YY = DECIMAL(SUBSTR(WS_START_DT, 1, 4), 4, 0);
+      WS_START_MM = DECIMAL(SUBSTR(WS_START_DT, 5, 2), 2, 0);
+      WS_START_DD = DECIMAL(SUBSTR(WS_START_DT, 7, 2), 2, 0);
+
+      WS_YEAR_DIFF = WS_CALC_YY - WS_START_YY;
+      WS_MONTH_DIFF = WS_CALC_MM - WS_START_MM;
+
+      WS_MONTHS = WS_YEAR_DIFF * 12 + WS_MONTH_DIFF;
+
+      /* 初日未到来なら月数を1減じる                                  */
+      IF WS_CALC_DD < WS_START_DD & WS_MONTHS > 0 THEN
+         WS_MONTHS = WS_MONTHS - 1;
+
+   END CALC_MONTH_DIFF;
+
+END pmsurrcal;

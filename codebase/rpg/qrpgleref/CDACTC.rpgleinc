@@ -1,0 +1,11 @@
+       // CDACTC -- CDACTF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdactf_rec qualified;
+         ac_account_id      char(10);
+         ac_card_no         char(16);
+         ac_bank_cd         char(10);
+         ac_branch_cd       char(10);
+         ac_deposit_type    char(2);
+         ac_account_no      char(16);
+         ac_holder_kana     char(40);
+         ac_transfer_status char(2);
+       end-ds;

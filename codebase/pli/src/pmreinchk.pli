@@ -1,0 +1,313 @@
+/*================================================================*/
+/* PROGRAM: PMREINCHK                                              */
+/* 復活申請検証バッチ                                              */
+/* Reinstatement Application Verification Batch                   */
+/*                                                                 */
+/* 変更履歴                                                         */
+/* Ver  年月日    担当      概要                                   */
+/* 1.0  2014/04  佐藤      初版作成 復活申請入力→復活可否判定     */
+/* 1.1  2015/08  伊藤      復活可能期限チェック強化 lf_reinstate  */
+/* 1.2  2017/11  武田      払込遅延保険金回収ロジック追加         */
+/* 2.0  2020/06  田中      帳簿統合 LFAUDL出力ロジック統一       */
+/*================================================================*/
+
+pmreinchk: PROC OPTIONS(MAIN);
+
+%INCLUDE LFLAPFC;    /* 契約復活情報ファイル       */
+%INCLUDE LFCONFC;    /* 契約マスタファイル         */
+%INCLUDE LFPAYF2C;   /* 払込実績ファイル           */
+%INCLUDE LFAUDLC;    /* 監査ログファイル           */
+
+   DCL input_file      FILE RECORD SEQUENTIAL;
+   DCL lapf_file       FILE RECORD SEQUENTIAL INPUT;
+   DCL conf_file       FILE RECORD SEQUENTIAL INPUT;
+   DCL payf_file       FILE RECORD SEQUENTIAL INPUT;
+   DCL audit_file      FILE RECORD SEQUENTIAL OUTPUT;
+
+   /* ===================== Working Storage ===================== */
+
+   DCL 1 app_rec,
+         2 appl_no         PIC '9(8)',
+         2 con_no          PIC '9(10)',
+         2 appl_date       PIC '9(8)',
+         2 requested_amt   FIXED DECIMAL(11,2),
+         2 filler          CHAR(62);
+
+   DCL 1 ws_flags,
+         2 lfapf_found     CHAR(1) INIT('N'),
+         2 lfconf_found    CHAR(1) INIT('N'),
+         2 payf_sum_found  CHAR(1) INIT('N'),
+         2 reinstate_elig  CHAR(1) INIT('N'),
+         2 eof_flag        CHAR(1) INIT('N');
+
+   DCL 1 ws_counters,
+         2 payf_rec_cnt    FIXED DECIMAL(5,0) INIT(0),
+         2 payf_ok_cnt     FIXED DECIMAL(5,0) INIT(0),
+         2 appl_cnt        FIXED DECIMAL(7,0) INIT(0),
+         2 success_cnt     FIXED DECIMAL(7,0) INIT(0),
+         2 reject_cnt      FIXED DECIMAL(7,0) INIT(0);
+
+   DCL 1 ws_accums,
+         2 total_paid_amt  FIXED DECIMAL(13,2) INIT(0),
+         2 arrear_amt      FIXED DECIMAL(13,2) INIT(0),
+         2 remaining_bal   FIXED DECIMAL(13,2) INIT(0);
+
+   DCL ws_result_kbn     CHAR(2)   INIT('OK');
+   DCL ws_condition_cd   CHAR(3)   INIT('');
+   DCL ws_today          PIC '9(8)';
+   DCL ws_due_date       PIC '9(8)';
+   DCL ws_days_overdue   FIXED DECIMAL(4,0);
+   DCL ws_status_check   CHAR(2);
+   DCL ws_payf_mode      CHAR(1);
+   DCL ws_paid_cnt       FIXED DECIMAL(3,0);
+   DCL ws_expected_pays  FIXED DECIMAL(3,0);
+
+   DCL reinstate_return_code FIXED DECIMAL(5,0);
+
+   /* ===================== File Handlers ===================== */
+
+   ON ENDFILE(input_file)
+      eof_flag = 'Y';
+
+   ON ENDFILE(lapf_file)
+      BEGIN;
+      CLOSE lapf_file;
+      lfapf_found = 'N';
+      END;
+
+   ON ENDFILE(conf_file)
+      BEGIN;
+      CLOSE conf_file;
+      lfconf_found = 'N';
+      END;
+
+   ON ENDFILE(payf_file)
+      BEGIN;
+      CLOSE payf_file;
+      payf_sum_found = 'N';
+      END;
+
+   ON ERROR(input_file, lapf_file, conf_file, payf_file, audit_file)
+      BEGIN;
+      PUT SKIP LIST 'ERROR: File I/O Error occurred';
+      PUT SKIP LIST 'File Status: ' || IOSTATUS;
+      CALL EXIT(1);
+      END;
+
+   /* ===================== Main Processing ===================== */
+
+   OPEN FILE(input_file)   INPUT;
+   OPEN FILE(lapf_file)    INPUT;
+   OPEN FILE(conf_file)    INPUT;
+   OPEN FILE(payf_file)    INPUT;
+   OPEN FILE(audit_file)   OUTPUT;
+
+   /* 処理日付を取得 ロジック本体では使用する日付マスタまたはシステム日付 */
+   ws_today = '20240615';  /* 本番環境ではシステム日付を使用 */
+
+   /* 復活申請の読込ループ */
+   READ FILE(input_file) INTO(app_rec);
+   DO WHILE(eof_flag = 'N');
+      appl_cnt = appl_cnt + 1;
+
+      /* 初期化 */
+      ws_result_kbn = 'OK';
+      ws_condition_cd = '';
+      lfapf_found = 'N';
+      lfconf_found = 'N';
+      payf_sum_found = 'N';
+      reinstate_elig = 'N';
+
+      /* ========== CHECK1: LFLAPF から復活情報を検証 ========== */
+      PERFORM LOOKUP_LFLAPF;
+
+      IF lfapf_found = 'N' THEN
+         BEGIN;
+         ws_result_kbn = 'NG';
+         ws_condition_cd = '101';  /* 復活情報が存在しない */
+         END;
+      ELSE
+         IF lapf_reinst_status_kbn ^= '02' THEN
+            BEGIN;
+            ws_result_kbn = 'NG';
+            ws_condition_cd = '102';  /* 復活申請ステータス不正 */
+            END;
+         ELSE
+            BEGIN;
+            /* 復活可能期限の確認 */
+            PERFORM CHECK_REINSTATE_DUE_DATE;
+            IF ws_days_overdue > 0 THEN
+               BEGIN;
+               ws_result_kbn = 'NG';
+               ws_condition_cd = '103';  /* 復活可能期限超過 */
+               END;
+            END;
+
+      /* ========== CHECK2: LFCONF から契約マスタを検証 ========== */
+      IF ws_result_kbn = 'OK' THEN
+         BEGIN;
+         PERFORM LOOKUP_LFCONF;
+
+         IF lfconf_found = 'N' THEN
+            BEGIN;
+            ws_result_kbn = 'NG';
+            ws_condition_cd = '201';  /* 契約マスタが存在しない */
+            END;
+         ELSE
+            IF conf_con_status_kbn ^= '40' THEN
+               BEGIN;
+               ws_result_kbn = 'NG';
+               ws_condition_cd = '202';  /* 契約状態が失効ではない */
+               END;
+         END;
+
+      /* ========== CHECK3: lf_reinstate を呼び出し ========== */
+      IF ws_result_kbn = 'OK' THEN
+         BEGIN;
+         CALL lf_reinstate(app_rec.con_no, ws_today,
+                           reinstate_return_code);
+         IF reinstate_return_code ^= 0 THEN
+            BEGIN;
+            ws_result_kbn = 'NG';
+            ws_condition_cd = '301';  /* 復活適格ウィンドウ外 */
+            reinstate_elig = 'N';
+            END;
+         ELSE
+            reinstate_elig = 'Y';
+         END;
+
+      /* ========== CHECK4: LFPAYF から払込実績を集計 ========== */
+      IF ws_result_kbn = 'OK' AND reinstate_elig = 'Y' THEN
+         BEGIN;
+         PERFORM VERIFY_PREMIUM_ARREAR;
+         IF payf_sum_found = 'N' THEN
+            BEGIN;
+            ws_result_kbn = 'NG';
+            ws_condition_cd = '401';  /* 払込実績レコードなし */
+            END;
+         ELSE
+            IF remaining_bal > 0 THEN
+               BEGIN;
+               ws_result_kbn = 'NG';
+               ws_condition_cd = '402';  /* 保険料未納部分あり */
+               END;
+         END;
+
+      /* ========== LFAUDL へ結果を出力 ========== */
+      PERFORM OUTPUT_AUDIT_LOG;
+
+      IF ws_result_kbn = 'OK' THEN
+         success_cnt = success_cnt + 1;
+      ELSE
+         reject_cnt = reject_cnt + 1;
+
+      /* 次レコード読込 */
+      READ FILE(input_file) INTO(app_rec);
+   END;  /* DO WHILE */
+
+   /* ===================== Close Files & Exit ===================== */
+   CLOSE FILE(input_file);
+   CLOSE FILE(lapf_file);
+   CLOSE FILE(conf_file);
+   CLOSE FILE(payf_file);
+   CLOSE FILE(audit_file);
+
+   PUT SKIP LIST 'PMREINCHK Batch Processing Completed';
+   PUT SKIP LIST 'Application Count: ' || appl_cnt;
+   PUT SKIP LIST 'Success Count: ' || success_cnt;
+   PUT SKIP LIST 'Reject Count: ' || reject_cnt;
+
+   RETURN;
+
+   /* ===================== INTERNAL PROCEDURES ===================== */
+
+LOOKUP_LFLAPF: PROC;
+   /* LFLAPF から申請番号のレコードを検索 */
+   REWIND FILE(lapf_file);
+   READ FILE(lapf_file) INTO(lflapf_rec);
+   DO WHILE(IOSTATUS = '00'00'X);
+      IF lapf_appl_no = app_rec.appl_no THEN
+         BEGIN;
+         lfapf_found = 'Y';
+         RETURN;
+         END;
+      READ FILE(lapf_file) INTO(lflapf_rec);
+   END;
+   lfapf_found = 'N';
+END LOOKUP_LFLAPF;
+
+LOOKUP_LFCONF: PROC;
+   /* LFCONF から契約番号のマスタレコードを検索 */
+   REWIND FILE(conf_file);
+   READ FILE(conf_file) INTO(lfconf_rec);
+   DO WHILE(IOSTATUS = '00'00'X);
+      IF conf_con_no = app_rec.con_no THEN
+         BEGIN;
+         lfconf_found = 'Y';
+         RETURN;
+         END;
+      READ FILE(conf_file) INTO(lfconf_rec);
+   END;
+   lfconf_found = 'N';
+END LOOKUP_LFCONF;
+
+CHECK_REINSTATE_DUE_DATE: PROC;
+   /* 復活可能期限の経過日数を計算 */
+   /* 簡易計算: yyyymmdd 形式の日付差分 */
+   ws_due_date = lapf_reinstate_due_dt;
+   IF ws_today > ws_due_date THEN
+      ws_days_overdue = (ws_today - ws_due_date) / 1;
+   ELSE
+      ws_days_overdue = 0;
+END CHECK_REINSTATE_DUE_DATE;
+
+VERIFY_PREMIUM_ARREAR: PROC;
+   /* LFPAYF から契約の払込実績を集計し未納額を確認 */
+   total_paid_amt = 0;
+   payf_rec_cnt = 0;
+   payf_ok_cnt = 0;
+
+   REWIND FILE(payf_file);
+   READ FILE(payf_file) INTO(lfpayf_rec);
+   DO WHILE(IOSTATUS = '00'00'X);
+      IF payf_con_no = app_rec.con_no THEN
+         BEGIN;
+         payf_sum_found = 'Y';
+         payf_rec_cnt = payf_rec_cnt + 1;
+
+         IF payf_paid_kbn = '1' THEN  /* 入金済 */
+            BEGIN;
+            payf_ok_cnt = payf_ok_cnt + 1;
+            total_paid_amt = total_paid_amt + payf_paid_amt;
+            END;
+
+         IF payf_paid_kbn = '0' THEN  /* 未入金 */
+            arrear_amt = arrear_amt + payf_due_amt;
+         END;
+
+      READ FILE(payf_file) INTO(lfpayf_rec);
+   END;
+
+   remaining_bal = arrear_amt;
+END VERIFY_PREMIUM_ARREAR;
+
+OUTPUT_AUDIT_LOG: PROC;
+   /* LFAUDL レコードを構築・出力 */
+   REWIND FILE(audit_file);
+
+   lfaudl_appl_no = app_rec.appl_no;
+   lfaudl_con_no = app_rec.con_no;
+   lfaudl_ope_type_kbn = 'RI';       /* 復活申請 */
+   lfaudl_result_kbn = ws_result_kbn;
+   lfaudl_condition_cd = ws_condition_cd;
+   lfaudl_process_dt = ws_today;
+   lfaudl_process_time = '235959';   /* バッチ終了時刻 */
+   lfaudl_requested_amt = app_rec.requested_amt;
+   lfaudl_payf_rec_cnt = payf_rec_cnt;
+   lfaudl_arrear_amt = arrear_amt;
+   lfaudl_filler = SPACES;
+
+   WRITE FILE(audit_file) FROM(lfaudl_rec);
+END OUTPUT_AUDIT_LOG;
+
+END pmreinchk;

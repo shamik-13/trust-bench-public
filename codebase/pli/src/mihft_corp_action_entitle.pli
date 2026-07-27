@@ -1,0 +1,441 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数   年月日     担当     概要                                   */
+/*  0.1    2018/04/16 藤田 和也 (E-271)    初版作成                               */
+/*  0.2    2019/10/07 中川 美和 (E-283)    併合比率の小数桁拡張                   */
+/*  0.3    2021/06/21 小林 直樹 (E-252)    決済済数量基準日の判定追加             */
+/*  0.4    2023/02/13 藤田 和也 (E-271)    照合差分出力をSCRECN形式へ変更         */
+/*--------------------------------------------------------------------*/
+/*  みらい証券 決済系                                                 */
+/*  プログラム : MIHFT_CORP_ACTION_ENTITLE                            */
+/*  処理名     : 権利予定数量算定                                     */
+/*  備考       : 実決済指図、支払日確定、残高更新は行わない           */
+/*--------------------------------------------------------------------*/
+
+mihft_corp_action_entitle: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCCACT2C;
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCRECNC;
+   %INCLUDE SCAUDTC;
+
+   DCL  FCACT     FILE RECORD INPUT  ENV(F RECSIZE(256));
+   DCL  FPOSI     FILE RECORD INPUT  ENV(F RECSIZE(300));
+   DCL  FRECN     FILE RECORD OUTPUT ENV(F RECSIZE(220));
+   DCL  FAUDT     FILE RECORD OUTPUT ENV(F RECSIZE(180));
+
+   DCL  EOF_ACT        BIT(1) INIT('0'B);
+   DCL  EOF_POSI       BIT(1) INIT('0'B);
+   DCL  ERR_SW         BIT(1) INIT('0'B);
+   DCL  SKIP_SW        BIT(1) INIT('0'B);
+   DCL  HOLD_POSI_SW   BIT(1) INIT('0'B);
+
+   DCL  PGM_ID         CHAR(10) INIT('MIHFTCACT');
+   DCL  SYS_DATE       PIC'99999999';
+   DCL  SYS_TIME       PIC'999999';
+   DCL  WK_MSG         CHAR(80);
+   DCL  WK_KEY_ACT     CHAR(32);
+   DCL  WK_KEY_POSI    CHAR(32);
+   DCL  WK_BASE_DT     PIC'99999999';
+   DCL  WK_EX_DT       PIC'99999999';
+   DCL  WK_YYYY        FIXED DEC(4,0);
+   DCL  WK_MM          FIXED DEC(2,0);
+   DCL  WK_DD          FIXED DEC(2,0);
+   DCL  WK_DAYS        FIXED DEC(7,0);
+   DCL  WK_DAYS2       FIXED DEC(7,0);
+   DCL  WK_LEAP        BIT(1);
+   DCL  WK_IDX         FIXED BIN(15);
+   DCL  WK_DIM         FIXED BIN(15);
+   DCL  WK_REF_ID      CHAR(10);
+   DCL  WK_RECON_SEQ   FIXED DEC(9,0) INIT(0);
+   DCL  WK_AUDIT_SEQ   FIXED DEC(9,0) INIT(0);
+   DCL  WK_SEQ_C       PIC'(10)9';
+
+   DCL  IN_ACT_CNT     FIXED DEC(9,0) INIT(0);
+   DCL  IN_POSI_CNT    FIXED DEC(9,0) INIT(0);
+   DCL  OUT_RECN_CNT   FIXED DEC(9,0) INIT(0);
+   DCL  OUT_AUDT_CNT   FIXED DEC(9,0) INIT(0);
+   DCL  ERR_CNT        FIXED DEC(9,0) INIT(0);
+   DCL  SKIP_CNT       FIXED DEC(9,0) INIT(0);
+
+   DCL  RATE_DEC       FIXED DEC(17,10);
+   DCL  SETTLED_QTY    FIXED DEC(15,3);
+   DCL  RAW_ENT_QTY    FIXED DEC(25,10);
+   DCL  ENTITLE_QTY    FIXED DEC(15,3);
+   DCL  FRACTION_QTY   FIXED DEC(15,10);
+   DCL  CASH_AMT       FIXED DEC(17,2);
+   DCL  RAW_CASH_AMT   FIXED DEC(25,6);
+   DCL  DIFF_AMT       FIXED DEC(17,2);
+   DCL  ROUND_UNIT     FIXED DEC(7,3);
+   DCL  ZERO_AMT       FIXED DEC(17,2) INIT(0);
+   DCL  ZERO_QTY       FIXED DEC(15,3) INIT(0);
+
+   DCL  VALID_MM_DAYS(12) FIXED BIN(15)
+        INIT(31,28,31,30,31,30,31,31,30,31,30,31);
+
+   ON ENDFILE(FCACT) EOF_ACT = '1'B;
+   ON ENDFILE(FPOSI) EOF_POSI = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      WK_MSG = '異常終了: 算定処理中にERROR条件発生';
+      CALL WRITE_AUDIT('E', WK_MSG);
+      GOTO ABEND_EXIT;
+   END;
+
+   OPEN FILE(FCACT);
+   OPEN FILE(FPOSI);
+   OPEN FILE(FRECN);
+   OPEN FILE(FAUDT);
+
+   SYS_DATE = DATE();
+   SYS_TIME = SUBSTR(TIME(),1,6);
+
+   WK_MSG = '開始: 権利予定数量算定';
+   CALL WRITE_AUDIT('I', WK_MSG);
+
+   CALL READ_ACT;
+   CALL READ_POSI;
+
+   DO WHILE(^EOF_ACT);
+
+      SKIP_SW = '0'B;
+      WK_KEY_ACT = AC_INSTR_CODE || AC_BASE_DT || AC_ACTION_KBN;
+
+      CALL VALIDATE_ACT;
+
+      IF SKIP_SW THEN DO;
+         SKIP_CNT = SKIP_CNT + 1;
+         CALL READ_ACT;
+      END;
+      ELSE DO;
+
+         DO WHILE(^EOF_POSI &
+                  PS_INSTR_CODE < AC_INSTR_CODE);
+            CALL READ_POSI;
+         END;
+
+         DO WHILE(^EOF_POSI &
+                  PS_INSTR_CODE = AC_INSTR_CODE);
+
+            WK_KEY_POSI = PS_INSTR_CODE || PS_POS_KEY || PS_CIF_NO;
+
+            CALL VALIDATE_POSI;
+
+            IF ^SKIP_SW THEN DO;
+               IF PS_BASE_DT <= AC_BASE_DT &
+                  PS_SETTLED_QTY ^= ZERO_QTY THEN DO;
+
+                  SETTLED_QTY = PS_SETTLED_QTY;
+                  RATE_DEC    = AC_RATE_DEC;
+
+                  SELECT(AC_ACTION_KBN);
+                     WHEN('DV') DO;
+                        RAW_CASH_AMT = SETTLED_QTY * RATE_DEC;
+                        CASH_AMT = ROUND_MONEY(RAW_CASH_AMT, 'R');
+                        DIFF_AMT = CASH_AMT - RAW_CASH_AMT;
+                        IF DIFF_AMT ^= ZERO_AMT THEN
+                           CALL WRITE_RECN('A', ZERO_QTY, CASH_AMT,
+                                           ZERO_QTY, DIFF_AMT);
+                        ELSE
+                           CALL WRITE_RECN('N', ZERO_QTY, CASH_AMT,
+                                           ZERO_QTY, ZERO_AMT);
+                     END;
+
+                     WHEN('SP') DO;
+                        RAW_ENT_QTY  = SETTLED_QTY * RATE_DEC;
+                        ENTITLE_QTY  = ROUND_QTY(RAW_ENT_QTY, 'D');
+                        FRACTION_QTY = RAW_ENT_QTY - ENTITLE_QTY;
+                        IF FRACTION_QTY ^= 0 THEN
+                           CALL WRITE_RECN('Q', ENTITLE_QTY, ZERO_AMT,
+                                           FRACTION_QTY, ZERO_AMT);
+                        ELSE
+                           CALL WRITE_RECN('N', ENTITLE_QTY, ZERO_AMT,
+                                           0, ZERO_AMT);
+                     END;
+
+                     WHEN('RS') DO;
+                        RAW_ENT_QTY  = SETTLED_QTY * RATE_DEC;
+                        ENTITLE_QTY  = ROUND_QTY(RAW_ENT_QTY, 'D');
+                        FRACTION_QTY = RAW_ENT_QTY - ENTITLE_QTY;
+                        CALL WRITE_RECN('Q', ENTITLE_QTY, ZERO_AMT,
+                                        FRACTION_QTY, ZERO_AMT);
+                     END;
+
+                     OTHERWISE DO;
+                        ERR_CNT = ERR_CNT + 1;
+                        WK_MSG = '権利種別不正: ' || AC_ACTION_KBN;
+                        CALL WRITE_AUDIT('W', WK_MSG);
+                     END;
+                  END;
+
+               END;
+            END;
+
+            SKIP_SW = '0'B;
+            CALL READ_POSI;
+         END;
+
+         CALL READ_ACT;
+      END;
+   END;
+
+NORMAL_EXIT:
+   WK_MSG = '終了: 権利予定数量算定';
+   CALL WRITE_AUDIT('I', WK_MSG);
+   CALL WRITE_AUDIT('I', '入力CA件数=' || DECCHAR(IN_ACT_CNT,9));
+   CALL WRITE_AUDIT('I', '入力残高件数=' || DECCHAR(IN_POSI_CNT,9));
+   CALL WRITE_AUDIT('I', '出力照合件数=' || DECCHAR(OUT_RECN_CNT,9));
+   CALL WRITE_AUDIT('I', '監査件数=' || DECCHAR(OUT_AUDT_CNT,9));
+   CALL WRITE_AUDIT('I', '警告件数=' || DECCHAR(ERR_CNT,9));
+
+   CLOSE FILE(FCACT);
+   CLOSE FILE(FPOSI);
+   CLOSE FILE(FRECN);
+   CLOSE FILE(FAUDT);
+   RETURN;
+
+ABEND_EXIT:
+   CALL WRITE_AUDIT('E', '異常終了: 処理打切');
+   CLOSE FILE(FCACT);
+   CLOSE FILE(FPOSI);
+   CLOSE FILE(FRECN);
+   CLOSE FILE(FAUDT);
+   SIGNAL ERROR;
+
+READ_ACT: PROC;
+   READ FILE(FCACT) INTO(SCCACT2_REC);
+   IF ^EOF_ACT THEN IN_ACT_CNT = IN_ACT_CNT + 1;
+END READ_ACT;
+
+READ_POSI: PROC;
+   READ FILE(FPOSI) INTO(SCPOSI_REC);
+   IF ^EOF_POSI THEN IN_POSI_CNT = IN_POSI_CNT + 1;
+END READ_POSI;
+
+VALIDATE_ACT: PROC;
+   IF AC_INSTR_CODE = ' ' THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '銘柄コード空白');
+   END;
+
+   IF AC_ACTION_ID = ' ' THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', 'アクションID空白');
+   END;
+
+   IF ^VALID_DATE(AC_BASE_DT) THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '基準日不正: ' || AC_BASE_DT);
+   END;
+
+   IF ^VALID_DATE(AC_PAY_DT) THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '支払日不正: ' || AC_PAY_DT);
+   END;
+
+   IF AC_RATE_DEC <= 0 THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '比率不正');
+   END;
+
+   IF AC_ACTION_KBN ^= 'DV' &
+      AC_ACTION_KBN ^= 'SP' &
+      AC_ACTION_KBN ^= 'RS' THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '権利種別不正: ' || AC_ACTION_KBN);
+   END;
+
+   IF ^SKIP_SW THEN DO;
+      WK_DAYS  = DATE_NO(AC_BASE_DT);
+      WK_DAYS2 = DATE_NO(AC_PAY_DT);
+      IF WK_DAYS > WK_DAYS2 THEN DO;
+         ERR_CNT = ERR_CNT + 1;
+         CALL WRITE_AUDIT('W', '支払日が基準日前: ' ||
+                              AC_INSTR_CODE);
+      END;
+   END;
+END VALIDATE_ACT;
+
+VALIDATE_POSI: PROC;
+   IF PS_POS_KEY = ' ' THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '残高キー空白: ' || PS_INSTR_CODE);
+   END;
+
+   IF ^VALID_DATE(PS_BASE_DT) THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '基準日不正: ' || PS_POS_KEY);
+   END;
+
+   IF PS_SETTLED_QTY < 0 THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '決済済数量マイナス: ' || PS_POS_KEY);
+   END;
+
+   IF PS_STATUS_KBN ^= '0' &
+      PS_STATUS_KBN ^= '1' THEN DO;
+      SKIP_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      CALL WRITE_AUDIT('W', '残高状態区分不正: ' || PS_STATUS_KBN);
+   END;
+END VALIDATE_POSI;
+
+WRITE_RECN: PROC(P_KBN, P_QTY, P_AMT, P_FRQ, P_DAMT);
+   DCL P_KBN   CHAR(1);
+   DCL P_QTY   FIXED DEC(15,3);
+   DCL P_AMT   FIXED DEC(17,2);
+   DCL P_FRQ   FIXED DEC(15,10);
+   DCL P_DAMT  FIXED DEC(17,2);
+
+   SCRECN_REC          = '';
+   WK_RECON_SEQ = WK_RECON_SEQ + 1;
+   WK_SEQ_C = WK_RECON_SEQ;
+   RC_RECON_ID    = 'RC' || SUBSTR(WK_SEQ_C, 3, 8);
+   RC_SOURCE_KBN  = 'CA';
+   RC_TARGET_KBN  = 'PS';
+   RC_BUS_DT      = AC_BASE_DT;
+   RC_REF_ID      = AC_ACTION_ID;
+   RC_DIFF_AMT    = P_AMT - P_DAMT;
+   RC_DIFF_QTY    = P_QTY;
+   RC_RESULT_KBN  = P_KBN;
+
+   WRITE FILE(FRECN) FROM(SCRECN_REC);
+   OUT_RECN_CNT = OUT_RECN_CNT + 1;
+END WRITE_RECN;
+
+WRITE_AUDIT: PROC(P_LVL, P_TEXT);
+   DCL P_LVL  CHAR(1);
+   DCL P_TEXT CHAR(*);
+
+   SCAUDT_REC      = '';
+   WK_AUDIT_SEQ = WK_AUDIT_SEQ + 1;
+   WK_SEQ_C = WK_AUDIT_SEQ;
+   AU_AUDIT_ID     = 'AU' || SUBSTR(WK_SEQ_C, 3, 8);
+   AU_PGM_ID       = PGM_ID;
+   AU_BUS_DT       = AC_BASE_DT;
+   AU_REF_ID       = AC_ACTION_ID;
+   AU_EVENT_KBN    = P_LVL;
+   AU_BEFORE_STATUS = AC_STATUS_KBN;
+   AU_AFTER_STATUS = AC_STATUS_KBN;
+   AU_OP_TS        = SYS_DATE || SYS_TIME;
+
+   WRITE FILE(FAUDT) FROM(SCAUDT_REC);
+   OUT_AUDT_CNT = OUT_AUDT_CNT + 1;
+END WRITE_AUDIT;
+
+VALID_DATE: PROC(P_DT) RETURNS(BIT(1));
+   DCL P_DT PIC'99999999';
+   DCL RET  BIT(1) INIT('1'B);
+
+   WK_YYYY = DECIMAL(SUBSTR(P_DT,1,4),4,0);
+   WK_MM   = DECIMAL(SUBSTR(P_DT,5,2),2,0);
+   WK_DD   = DECIMAL(SUBSTR(P_DT,7,2),2,0);
+
+   IF WK_YYYY < 1980 | WK_YYYY > 2099 THEN RET = '0'B;
+   ELSE IF WK_MM < 1 | WK_MM > 12 THEN RET = '0'B;
+   ELSE DO;
+      WK_DIM = VALID_MM_DAYS(WK_MM);
+      WK_LEAP = LEAP_YEAR(WK_YYYY);
+      IF WK_MM = 2 & WK_LEAP THEN WK_DIM = 29;
+      IF WK_DD < 1 | WK_DD > WK_DIM THEN RET = '0'B;
+   END;
+
+   RETURN(RET);
+END VALID_DATE;
+
+LEAP_YEAR: PROC(P_Y) RETURNS(BIT(1));
+   DCL P_Y FIXED DEC(4,0);
+
+   IF MOD(P_Y,400) = 0 THEN RETURN('1'B);
+   IF MOD(P_Y,100) = 0 THEN RETURN('0'B);
+   IF MOD(P_Y,4)   = 0 THEN RETURN('1'B);
+   RETURN('0'B);
+END LEAP_YEAR;
+
+DATE_NO: PROC(P_DT) RETURNS(FIXED DEC(7,0));
+   DCL P_DT PIC'99999999';
+   DCL Y    FIXED DEC(4,0);
+   DCL M    FIXED DEC(2,0);
+   DCL D    FIXED DEC(2,0);
+   DCL N    FIXED DEC(7,0);
+   DCL I    FIXED BIN(15);
+
+   Y = DECIMAL(SUBSTR(P_DT,1,4),4,0);
+   M = DECIMAL(SUBSTR(P_DT,5,2),2,0);
+   D = DECIMAL(SUBSTR(P_DT,7,2),2,0);
+
+   N = (Y - 1900) * 365
+       + FLOOR((Y - 1901) / 4)
+       - FLOOR((Y - 1901) / 100)
+       + FLOOR((Y - 1601) / 400);
+
+   DO I = 1 TO M - 1;
+      N = N + VALID_MM_DAYS(I);
+      IF I = 2 & LEAP_YEAR(Y) THEN N = N + 1;
+   END;
+
+   N = N + D;
+   RETURN(N);
+END DATE_NO;
+
+ROUND_QTY: PROC(P_RAW, P_MODE) RETURNS(FIXED DEC(15,3));
+   DCL P_RAW  FIXED DEC(25,10);
+   DCL P_MODE CHAR(1);
+   DCL W      FIXED DEC(25,10);
+   DCL R      FIXED DEC(15,3);
+
+   SELECT(P_MODE);
+      WHEN('D') DO;
+         W = FLOOR(P_RAW * 1000) / 1000;
+      END;
+      WHEN('U') DO;
+         W = CEIL(P_RAW * 1000) / 1000;
+      END;
+      WHEN('R') DO;
+         W = FLOOR(P_RAW * 1000 + 0.5) / 1000;
+      END;
+      OTHERWISE W = FLOOR(P_RAW * 1000) / 1000;
+   END;
+
+   R = W;
+   RETURN(R);
+END ROUND_QTY;
+
+ROUND_MONEY: PROC(P_RAW, P_MODE) RETURNS(FIXED DEC(17,2));
+   DCL P_RAW  FIXED DEC(25,6);
+   DCL P_MODE CHAR(1);
+   DCL W      FIXED DEC(25,6);
+   DCL R      FIXED DEC(17,2);
+
+   SELECT(P_MODE);
+      WHEN('D') W = FLOOR(P_RAW * 100) / 100;
+      WHEN('U') W = CEIL(P_RAW * 100) / 100;
+      WHEN('R') W = FLOOR(P_RAW * 100 + 0.5) / 100;
+      OTHERWISE W = FLOOR(P_RAW * 100) / 100;
+   END;
+
+   R = W;
+   RETURN(R);
+END ROUND_MONEY;
+
+DECCHAR: PROC(P_N, P_L) RETURNS(CHAR(12));
+   DCL P_N FIXED DEC(9,0);
+   DCL P_L FIXED BIN(15);
+   DCL C   PIC'ZZZZZZZZ9';
+
+   C = P_N;
+   RETURN(SUBSTR(CHAR(C),1,MIN(P_L,9)));
+END DECCHAR;
+
+END mihft_corp_action_entitle;

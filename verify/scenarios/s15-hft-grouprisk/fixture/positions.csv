@@ -1,0 +1,6 @@
+# cif_no,instr_code,net_qty,price   (net_qty signed: 買い+ / 売り-; price ×100 minor units)
+# CUST01: a long + a short -> GROSS 8,200,000 (golden); signed-net 1,800,000 (start) -> discriminates
+CUST01,AAA,1000,5000
+CUST01,BBB,-800,4000
+# CUST02: long-only control -> gross == signed == 1,000,000 (both pass)
+CUST02,CCC,500,2000

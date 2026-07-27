@@ -1,0 +1,255 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数  年月日    担当      概要                                  */
+/*    01.00 2019/04/01 西村 亮 (E-204)                              */
+/*    01.01 2020/07/13 藤田 和也 (E-271)  DVP未着分の説明判定を追加             */
+/*    01.02 2022/11/28 藤田 和也 (E-271)     監査証跡の出力項目を整理              */
+/*--------------------------------------------------------------------*/
+/*  みらい証券  決済バックオフィス                                    */
+/*  カストディ残高照合                                                */
+/*--------------------------------------------------------------------*/
+
+mihft_custody_balance_recon: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCDVPIC;
+   %INCLUDE SCRECNC;
+   %INCLUDE SCAUDTC;
+
+   DCL POSIN    FILE RECORD INPUT  ENV(FB RECSIZE(240));
+   DCL DVPIN    FILE RECORD INPUT  ENV(FB RECSIZE(220));
+   DCL RECNOUT  FILE RECORD OUTPUT ENV(FB RECSIZE(260));
+   DCL AUDTOUT  FILE RECORD OUTPUT ENV(FB RECSIZE(180));
+
+   DCL POS_EOF        BIT(1) INIT('0'B);
+   DCL DVP_EOF        BIT(1) INIT('0'B);
+   DCL ERR_SW         BIT(1) INIT('0'B);
+
+   DCL CUR_CIF        CHAR(16) INIT('');
+   DCL CUR_INSTR      CHAR(4) INIT('');
+
+   DCL HOLD_CIF       CHAR(16) INIT('');
+   DCL HOLD_INSTR     CHAR(4) INIT('');
+
+   DCL RUN_YYYYMMDD   CHAR(8);
+   DCL RUN_HHMMSS     CHAR(6);
+   DCL RUN_OP_TS      CHAR(14) INIT('');
+   DCL BASE_YYYYMMDD  FIXED DEC(8,0) INIT(0);
+
+   DCL POS_QTY        FIXED DEC(15,3) INIT(0);
+   DCL LOCK_QTY       FIXED DEC(15,3) INIT(0);
+   DCL DVP_DONE_QTY   FIXED DEC(15,3) INIT(0);
+   DCL DVP_UNRCV_QTY  FIXED DEC(15,3) INIT(0);
+   DCL DIFF_QTY       FIXED DEC(15,3) INIT(0);
+   DCL ABS_DIFF_QTY   FIXED DEC(15,3) INIT(0);
+   DCL EXPL_QTY       FIXED DEC(15,3) INIT(0);
+
+   DCL POS_CNT        FIXED DEC(9,0) INIT(0);
+   DCL DVP_CNT        FIXED DEC(9,0) INIT(0);
+   DCL OUT_CNT        FIXED DEC(9,0) INIT(0);
+   DCL AUD_CNT        FIXED DEC(9,0) INIT(0);
+   DCL SKIP_CNT       FIXED DEC(9,0) INIT(0);
+   DCL ERR_CNT        FIXED DEC(9,0) INIT(0);
+
+   DCL REC_SEQ        FIXED DEC(9,0) INIT(0);
+   DCL WK_RESULT_KBN  CHAR(1) INIT('');
+   DCL WK_REASON_KBN  CHAR(2) INIT('');
+   DCL WK_SEQ_C       CHAR(10) INIT('');
+   DCL WK_MSG         CHAR(60) INIT('');
+
+   DCL 1 SAVE_DVP LIKE SCDVPI_REC;
+   DCL SAVE_DVP_VALID BIT(1) INIT('0'B);
+
+   DCL DATE BUILTIN;
+   DCL TIME BUILTIN;
+   DCL ABS  BUILTIN;
+   DCL SUBSTR BUILTIN;
+   DCL EDIT BUILTIN;
+
+   ON ENDFILE(POSIN) POS_EOF = '1'B;
+   ON ENDFILE(DVPIN) DVP_EOF = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      WK_MSG = 'システム例外により処理を中断';
+      CALL WRITE_AUDIT('E', WK_MSG);
+      GOTO ABEND_EXIT;
+   END;
+
+   RUN_YYYYMMDD  = '20' || DATE();
+   RUN_HHMMSS    = SUBSTR(TIME(), 1, 6);
+   RUN_OP_TS     = RUN_YYYYMMDD || RUN_HHMMSS;
+   BASE_YYYYMMDD = RUN_YYYYMMDD;
+
+   OPEN FILE(POSIN), FILE(DVPIN), FILE(RECNOUT), FILE(AUDTOUT);
+
+   CALL WRITE_AUDIT('I', 'カストディ残高照合 開始');
+
+   READ FILE(POSIN) INTO(SCPOSI_REC);
+   IF ^POS_EOF THEN POS_CNT = POS_CNT + 1;
+
+   READ FILE(DVPIN) INTO(SCDVPI_REC);
+   IF ^DVP_EOF THEN DVP_CNT = DVP_CNT + 1;
+
+   DO WHILE(^POS_EOF | ^DVP_EOF);
+
+      IF ^POS_EOF THEN DO;
+         CUR_CIF   = PS_CIF_NO;
+         CUR_INSTR = PS_INSTR_CODE;
+      END;
+      ELSE DO;
+         CUR_CIF   = DV_CIF_NO;
+         CUR_INSTR = DV_INSTR_CODE;
+      END;
+
+      IF ^DVP_EOF THEN DO;
+         IF POS_EOF |
+            DV_CIF_NO   < CUR_CIF |
+           (DV_CIF_NO   = CUR_CIF &
+            DV_INSTR_CODE < CUR_INSTR) THEN DO;
+            CUR_CIF   = DV_CIF_NO;
+            CUR_INSTR = DV_INSTR_CODE;
+         END;
+      END;
+
+      HOLD_CIF   = CUR_CIF;
+      HOLD_INSTR = CUR_INSTR;
+
+      POS_QTY       = 0;
+      LOCK_QTY      = 0;
+      DVP_DONE_QTY  = 0;
+      DVP_UNRCV_QTY = 0;
+
+      DO WHILE(^POS_EOF &
+               PS_CIF_NO     = HOLD_CIF   &
+               PS_INSTR_CODE = HOLD_INSTR);
+
+         IF PS_STATUS_KBN = 'D' THEN
+            SKIP_CNT = SKIP_CNT + 1;
+         ELSE DO;
+            IF PS_BASE_DT <= 0 THEN DO;
+               ERR_CNT = ERR_CNT + 1;
+               CALL WRITE_AUDIT('W', '社内残高 基準日不正を除外');
+            END;
+            ELSE IF PS_BASE_DT > BASE_YYYYMMDD THEN DO;
+               ERR_CNT = ERR_CNT + 1;
+               CALL WRITE_AUDIT('W', '社内残高 未来基準日を除外');
+            END;
+            ELSE DO;
+               POS_QTY  = POS_QTY  + PS_SETTLED_QTY;
+               LOCK_QTY = LOCK_QTY + PS_LOCK_QTY;
+            END;
+         END;
+
+         READ FILE(POSIN) INTO(SCPOSI_REC);
+         IF ^POS_EOF THEN POS_CNT = POS_CNT + 1;
+      END;
+
+      DO WHILE(^DVP_EOF &
+               DV_CIF_NO     = HOLD_CIF   &
+               DV_INSTR_CODE = HOLD_INSTR);
+
+         IF DV_MATCH_STATUS = 'C' THEN
+            SKIP_CNT = SKIP_CNT + 1;
+         ELSE DO;
+            IF DV_SETL_DT <= 0 THEN DO;
+               ERR_CNT = ERR_CNT + 1;
+               CALL WRITE_AUDIT('W', 'DVP約定 決済日不正を除外');
+            END;
+            ELSE DO;
+               SELECT(DV_MATCH_STATUS);
+                  WHEN('9') DO;
+                     IF DV_SETL_DT <= BASE_YYYYMMDD THEN
+                        DVP_DONE_QTY = DVP_DONE_QTY + DV_DELIVER_QTY;
+                     ELSE
+                        DVP_UNRCV_QTY = DVP_UNRCV_QTY + DV_DELIVER_QTY;
+                  END;
+                  WHEN('3','4','5') DO;
+                     IF DV_SETL_DT <= BASE_YYYYMMDD THEN
+                        DVP_UNRCV_QTY = DVP_UNRCV_QTY + DV_DELIVER_QTY;
+                  END;
+                  WHEN('1','2') DO;
+                     SKIP_CNT = SKIP_CNT + 1;
+                  END;
+                  OTHERWISE DO;
+                     ERR_CNT = ERR_CNT + 1;
+                     CALL WRITE_AUDIT('W', 'DVP約定 状態区分不正');
+                  END;
+               END;
+            END;
+         END;
+
+         READ FILE(DVPIN) INTO(SCDVPI_REC);
+         IF ^DVP_EOF THEN DVP_CNT = DVP_CNT + 1;
+      END;
+
+      DIFF_QTY     = POS_QTY - DVP_DONE_QTY;
+      ABS_DIFF_QTY = ABS(DIFF_QTY);
+      EXPL_QTY     = LOCK_QTY + DVP_UNRCV_QTY;
+
+      IF DIFF_QTY ^= 0 THEN DO;
+         WK_RESULT_KBN = '2';
+         WK_REASON_KBN = '99';
+
+         IF ABS_DIFF_QTY <= EXPL_QTY THEN DO;
+            WK_RESULT_KBN = '1';
+
+            IF ABS_DIFF_QTY <= LOCK_QTY THEN
+               WK_REASON_KBN = '10';
+            ELSE IF ABS_DIFF_QTY <= DVP_UNRCV_QTY THEN
+               WK_REASON_KBN = '20';
+            ELSE
+               WK_REASON_KBN = '30';
+         END;
+
+         REC_SEQ = REC_SEQ + 1;
+         WK_SEQ_C = EDIT(REC_SEQ, '9999999999');
+
+         RC_RECON_ID   = WK_SEQ_C;
+         RC_SOURCE_KBN = 'R';
+         RC_TARGET_KBN = WK_REASON_KBN;
+         RC_BUS_DT     = BASE_YYYYMMDD;
+         RC_REF_ID     = HOLD_CIF;
+         RC_DIFF_QTY   = DIFF_QTY;
+         RC_DIFF_AMT   = 0;
+         RC_RESULT_KBN = WK_RESULT_KBN;
+
+         WRITE FILE(RECNOUT) FROM(SCRECN_REC);
+         OUT_CNT = OUT_CNT + 1;
+      END;
+
+   END;
+
+   CALL WRITE_AUDIT('I', 'カストディ残高照合 正常終了');
+
+   CLOSE FILE(POSIN), FILE(DVPIN), FILE(RECNOUT), FILE(AUDTOUT);
+   RETURN;
+
+ABEND_EXIT:
+   CALL WRITE_AUDIT('E', 'カストディ残高照合 異常終了');
+
+   CLOSE FILE(POSIN), FILE(DVPIN), FILE(RECNOUT), FILE(AUDTOUT);
+   SIGNAL ERROR;
+
+WRITE_AUDIT: PROC(AUD_KBN, AUD_MSG);
+   DCL AUD_KBN CHAR(1);
+   DCL AUD_MSG CHAR(60);
+   DCL WK_AUD_C CHAR(10);
+
+   AUD_CNT = AUD_CNT + 1;
+   WK_AUD_C = EDIT(AUD_CNT, '9999999999');
+
+   AU_AUDIT_ID      = WK_AUD_C;
+   AU_PGM_ID        = 'MIHFTCBR';
+   AU_BUS_DT        = BASE_YYYYMMDD;
+   AU_REF_ID        = HOLD_CIF;
+   AU_EVENT_KBN     = AUD_KBN;
+   AU_BEFORE_STATUS = '';
+   AU_AFTER_STATUS  = '';
+   AU_OP_TS         = RUN_OP_TS;
+
+   WRITE FILE(AUDTOUT) FROM(SCAUDT_REC);
+END WRITE_AUDIT;
+
+END mihft_custody_balance_recon;

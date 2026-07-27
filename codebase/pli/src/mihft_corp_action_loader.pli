@@ -1,0 +1,183 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数  年月日    担当      概要                                    */
+/*  0.10  20190412  三宅 拓也 (E-241)      初版作成                                */
+/*  0.20  20201106  西村 亮 (E-204)      配当率小数桁検査を追加                  */
+/*  0.30  20220318  藤田 和也 (E-271)      支払日未設定時の状態補正を追加          */
+/*  0.40  20240527  藤田 和也 (E-271)      カレンダー監査呼出しを追加              */
+/*--------------------------------------------------------------------*/
+
+mihft_corp_action_loader: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCCACT2C;
+   %INCLUDE SCAUDTC;
+
+   DCL  INACT          FILE RECORD INPUT  ENV(FB RECSIZE(320));
+   DCL  OUTACT         FILE RECORD OUTPUT ENV(FB RECSIZE(320));
+   DCL  AUDTR          FILE RECORD OUTPUT ENV(FB RECSIZE(256));
+
+   DCL  1 SV_ACT       LIKE SCCACT2_REC;
+
+   DCL  EOF_SW         CHAR(1) INIT('0');
+   DCL  ERR_SW         CHAR(1) INIT('0');
+   DCL  DUP_SW         CHAR(1) INIT('0');
+   DCL  PAYMISS_SW     CHAR(1) INIT('0');
+   DCL  RATEERR_SW     CHAR(1) INIT('0');
+   DCL  CALERR_SW      CHAR(1) INIT('0');
+
+   DCL  IN_CNT         FIXED DEC(9)  INIT(0);
+   DCL  OUT_CNT        FIXED DEC(9)  INIT(0);
+   DCL  AUD_CNT        FIXED DEC(9)  INIT(0);
+   DCL  DUP_CNT        FIXED DEC(9)  INIT(0);
+   DCL  RATE_CNT       FIXED DEC(9)  INIT(0);
+   DCL  PAYMISS_CNT    FIXED DEC(9)  INIT(0);
+   DCL  CAL_CNT        FIXED DEC(9)  INIT(0);
+
+   DCL  WK_RATE        FIXED DEC(5,4)  INIT(0);
+   DCL  WK_CAL_STS     CHAR(2)         INIT('00');
+   DCL  WK_PAY_DT      FIXED DEC(8,0)  INIT(0);
+   DCL  WK_RET_CD      FIXED BIN(31)   INIT(0);
+
+   DCL  LAST_ACTION_ID CHAR(10) INIT((10)' ');
+   DCL  MSG_TEXT       CHAR(80) INIT((80)' ');
+   DCL  PGM_ID         CHAR(10) INIT('MICORPACT');
+
+   ON ENDFILE(INACT)
+      EOF_SW = '1';
+
+   ON ERROR BEGIN;
+      ERR_SW = '1';
+      MSG_TEXT = '権利情報ロードで入出力例外を検出';
+      CALL WRITE_AUDIT('E9', MSG_TEXT);
+      GOTO ABEND_RTN;
+   END;
+
+   OPEN FILE(INACT);
+   OPEN FILE(OUTACT);
+   OPEN FILE(AUDTR);
+
+   CALL WRITE_AUDIT('I0', '権利情報ロード開始');
+
+   READ FILE(INACT) INTO(SCCACT2_REC);
+
+   DO WHILE(EOF_SW = '0');
+
+      IN_CNT = IN_CNT + 1;
+
+      DUP_SW     = '0';
+      PAYMISS_SW = '0';
+      RATEERR_SW = '0';
+      CALERR_SW  = '0';
+      WK_CAL_STS = '00';
+
+      IF AC_ACTION_ID = LAST_ACTION_ID THEN
+         DO;
+            DUP_SW = '1';
+            DUP_CNT = DUP_CNT + 1;
+            CALL WRITE_AUDIT('W1',
+                 'ACTION-ID重複を検出 ' || AC_ACTION_ID);
+         END;
+      ELSE
+         LAST_ACTION_ID = AC_ACTION_ID;
+
+      WK_RATE = AC_RATE_DEC;
+
+      IF WK_RATE < 0 | WK_RATE > 1 THEN
+         DO;
+            RATEERR_SW = '1';
+            RATE_CNT = RATE_CNT + 1;
+            CALL WRITE_AUDIT('W2',
+                 'RATE範囲外を検出 ' || AC_ACTION_ID);
+         END;
+
+      IF AC_PAY_DT = 0 THEN
+         DO;
+            PAYMISS_SW = '1';
+            PAYMISS_CNT = PAYMISS_CNT + 1;
+            CALL WRITE_AUDIT('W3',
+                 '支払日未設定を検出 ' || AC_ACTION_ID);
+         END;
+      ELSE
+         DO;
+            WK_PAY_DT = AC_PAY_DT;
+
+            CALL mihft_calendar_session_audit
+                 (WK_PAY_DT,
+                  AC_INSTR_CODE,
+                  WK_CAL_STS,
+                  WK_RET_CD);
+
+            IF WK_CAL_STS ^= '00' THEN
+               DO;
+                  CALERR_SW = '1';
+                  CAL_CNT = CAL_CNT + 1;
+                  CALL WRITE_AUDIT('W4',
+                       '支払日セッションなし ' || AC_ACTION_ID);
+               END;
+         END;
+
+      SELECT;
+         WHEN(PAYMISS_SW = '1')
+            AC_STATUS_KBN = '31';
+         WHEN(RATEERR_SW = '1')
+            AC_STATUS_KBN = '32';
+         WHEN(DUP_SW = '1')
+            AC_STATUS_KBN = '33';
+         WHEN(CALERR_SW = '1')
+            AC_STATUS_KBN = '34';
+         WHEN(AC_STATUS_KBN = '  ' | AC_STATUS_KBN = '00')
+            AC_STATUS_KBN = '10';
+         OTHERWISE;
+      END;
+
+      WRITE FILE(OUTACT) FROM(SCCACT2_REC);
+      OUT_CNT = OUT_CNT + 1;
+
+      SV_ACT = SCCACT2_REC;
+      READ FILE(INACT) INTO(SCCACT2_REC);
+
+   END;
+
+   MSG_TEXT = '入力=' || EDIT(IN_CNT,'ZZZZZZZZ9') ||
+              ' 出力=' || EDIT(OUT_CNT,'ZZZZZZZZ9') ||
+              ' 監査=' || EDIT(AUD_CNT,'ZZZZZZZZ9');
+   CALL WRITE_AUDIT('I1', MSG_TEXT);
+
+   MSG_TEXT = '重複=' || EDIT(DUP_CNT,'ZZZZZZZZ9') ||
+              ' 率桁=' || EDIT(RATE_CNT,'ZZZZZZZZ9') ||
+              ' 支払日=' || EDIT(PAYMISS_CNT,'ZZZZZZZZ9') ||
+              ' 暦=' || EDIT(CAL_CNT,'ZZZZZZZZ9');
+   CALL WRITE_AUDIT('I2', MSG_TEXT);
+
+   CLOSE FILE(INACT);
+   CLOSE FILE(OUTACT);
+   CLOSE FILE(AUDTR);
+
+   RETURN;
+
+ABEND_RTN:
+   IF ERR_SW = '1' THEN
+      DO;
+         CLOSE FILE(INACT);
+         CLOSE FILE(OUTACT);
+         CLOSE FILE(AUDTR);
+      END;
+
+   SIGNAL ERROR;
+
+WRITE_AUDIT: PROC(AUD_CD, AUD_MSG);
+
+   DCL AUD_CD  CHAR(2);
+   DCL AUD_MSG CHAR(80);
+
+   AU_PGM_ID  = PGM_ID;
+   AU_EVENT_KBN = AUD_CD;
+   AU_REF_ID  = AC_ACTION_ID;
+   AU_OP_TS   = DATE('S') || TIME();
+
+   WRITE FILE(AUDTR) FROM(SCAUDT_REC);
+   AUD_CNT = AUD_CNT + 1;
+
+END WRITE_AUDIT;
+
+END mihft_corp_action_loader;

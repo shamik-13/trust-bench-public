@@ -1,0 +1,8 @@
+       // CDRTEXC -- CDRTEXF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdrtexf_rec qualified;
+         fx_currency_cd     char(10);
+         fx_rate_dt         packed(5:4);
+         fx_ttm_rate        packed(5:4);
+         fx_rate_source     packed(5:4);
+         fx_apply_status    char(2);
+       end-ds;

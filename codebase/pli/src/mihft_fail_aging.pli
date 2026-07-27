@@ -1,0 +1,223 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数    年月日      担当        概要                              */
+/*  01.00   2018-04-02  決済一課    初版作成                          */
+/*  01.01   2020-11-16  決済二課    休業日区分の読飛ばしを追加        */
+/*  01.02   2023-07-03  今井 彩 (E-230)    監査出力の件数欄を追加            */
+/*--------------------------------------------------------------------*/
+
+mihft_fail_aging: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCFAILC;
+   %INCLUDE SCCALFC;
+   %INCLUDE SCAUDTC;
+
+   DCL SCFAILI  FILE RECORD INPUT  ENV(F RECSIZE(512));
+   DCL SCFAILO  FILE RECORD OUTPUT ENV(F RECSIZE(512));
+   DCL SCCALF   FILE RECORD INPUT  ENV(F RECSIZE(128));
+   DCL SCAUDT   FILE RECORD OUTPUT ENV(F RECSIZE(256));
+   DCL SYSPRINT FILE STREAM OUTPUT;
+
+   DCL EOF_FAIL     BIT(1) INIT('0'B);
+   DCL EOF_CAL      BIT(1) INIT('0'B);
+   DCL ABEND_SW     BIT(1) INIT('0'B);
+
+   DCL PGM_ID       CHAR(10) INIT('MIHFTFAGE');
+   DCL MSG_AREA     CHAR(80);
+
+   DCL WK_PROC_DT   PIC'99999999' INIT('00000000');
+   DCL PROC_DT      PIC'99999999';
+   DCL SETL_DT_WK   PIC'99999999';
+   DCL CAL_DT_WK    PIC'99999999';
+   DCL PREV_CAL_DT  PIC'99999999' INIT('00000000');
+   DCL WK_OP_TS     CHAR(14) INIT('');
+
+   DCL AGE_CNT      FIXED DEC(5,0) INIT(0);
+   DCL IN_CNT       FIXED DEC(9,0) INIT(0);
+   DCL OUT_CNT      FIXED DEC(9,0) INIT(0);
+   DCL UPD_CNT      FIXED DEC(9,0) INIT(0);
+   DCL SKIP_CNT     FIXED DEC(9,0) INIT(0);
+   DCL CAL_CNT      FIXED DEC(9,0) INIT(0);
+   DCL ERR_CNT      FIXED DEC(9,0) INIT(0);
+
+   DCL OLD_AGE      FIXED DEC(5,0);
+
+   DCL 1 CAL_TAB(4000),
+         2 T_CAL_DT    PIC'99999999',
+         2 T_SESS_KBN  CHAR(1);
+
+   DCL IX          FIXED BIN(15);
+   DCL CAL_MAX     FIXED BIN(15) INIT(0);
+   DCL FOUND_SETL  BIT(1);
+   DCL FOUND_PROC  BIT(1);
+
+   ON ENDFILE(SCFAILI) EOF_FAIL = '1'B;
+   ON ENDFILE(SCCALF)  EOF_CAL  = '1'B;
+
+   ON ERROR BEGIN;
+      ABEND_SW = '1'B;
+      ERR_CNT = ERR_CNT + 1;
+      PUT FILE(SYSPRINT) EDIT
+         ('MIHFT 異常終了  MSG=', MSG_AREA,
+          ' IN=', IN_CNT, ' OUT=', OUT_CNT, ' UPD=', UPD_CNT)
+         (A, A, A, F(9), A, F(9), A, F(9));
+      GO TO ABEND_EXIT;
+   END;
+
+   MSG_AREA = '開始';
+   OPEN FILE(SCFAILI), FILE(SCFAILO), FILE(SCCALF), FILE(SCAUDT),
+        FILE(SYSPRINT);
+
+   PROC_DT = WK_PROC_DT;
+   IF PROC_DT = '00000000' THEN DO;
+      MSG_AREA = '処理日未設定';
+      SIGNAL ERROR;
+   END;
+
+   READ FILE(SCCALF) INTO(SCCALF_REC);
+
+   DO WHILE(^EOF_CAL);
+      IF CAL_MAX >= HBOUND(CAL_TAB,1) THEN DO;
+         MSG_AREA = 'カレンダ件数超過';
+         SIGNAL ERROR;
+      END;
+
+      IF CA_SESS_DT <= PREV_CAL_DT THEN DO;
+         MSG_AREA = 'カレンダ日付順序不正';
+         SIGNAL ERROR;
+      END;
+
+      SELECT(CA_SESS_KBN);
+         WHEN('B','H') DO;
+            CAL_MAX = CAL_MAX + 1;
+            T_CAL_DT(CAL_MAX)   = CA_SESS_DT;
+            T_SESS_KBN(CAL_MAX) = CA_SESS_KBN;
+            PREV_CAL_DT         = CA_SESS_DT;
+            CAL_CNT             = CAL_CNT + 1;
+         END;
+         OTHERWISE DO;
+            MSG_AREA = 'カレンダ区分不正';
+            SIGNAL ERROR;
+         END;
+      END;
+
+      READ FILE(SCCALF) INTO(SCCALF_REC);
+   END;
+
+   FOUND_PROC = '0'B;
+   DO IX = 1 TO CAL_MAX WHILE(^FOUND_PROC);
+      IF T_CAL_DT(IX) = PROC_DT THEN
+         FOUND_PROC = '1'B;
+   END;
+
+   IF ^FOUND_PROC THEN DO;
+      MSG_AREA = '処理日カレンダ未登録';
+      SIGNAL ERROR;
+   END;
+
+   READ FILE(SCFAILI) INTO(SCFAIL_REC);
+
+   DO WHILE(^EOF_FAIL);
+      IN_CNT = IN_CNT + 1;
+      AGE_CNT = 0;
+      OLD_AGE = FL_AGE_DAYS;
+      SETL_DT_WK = FL_SETL_DT;
+
+      IF FL_STATUS_KBN = 'F' THEN DO;
+         IF FL_REASON_KBN ^= '01' &
+            FL_REASON_KBN ^= '02' THEN DO;
+            ERR_CNT = ERR_CNT + 1;
+            SKIP_CNT = SKIP_CNT + 1;
+         END;
+         ELSE IF SETL_DT_WK = '00000000' |
+                 SETL_DT_WK > PROC_DT THEN DO;
+            ERR_CNT = ERR_CNT + 1;
+            SKIP_CNT = SKIP_CNT + 1;
+         END;
+         ELSE DO;
+            FOUND_SETL = '0'B;
+
+            DO IX = 1 TO CAL_MAX;
+               CAL_DT_WK = T_CAL_DT(IX);
+
+               IF CAL_DT_WK = SETL_DT_WK THEN
+                  FOUND_SETL = '1'B;
+
+               IF FOUND_SETL &
+                  CAL_DT_WK > SETL_DT_WK &
+                  CAL_DT_WK <= PROC_DT &
+                  T_SESS_KBN(IX) = 'B' THEN
+                  AGE_CNT = AGE_CNT + 1;
+            END;
+
+            IF ^FOUND_SETL THEN DO;
+               ERR_CNT = ERR_CNT + 1;
+               SKIP_CNT = SKIP_CNT + 1;
+            END;
+            ELSE DO;
+               IF FL_AGE_DAYS ^= AGE_CNT THEN DO;
+                  FL_AGE_DAYS = AGE_CNT;
+                  UPD_CNT     = UPD_CNT + 1;
+
+                  AU_BUS_DT        = PROC_DT;
+                  AU_PGM_ID        = PGM_ID;
+                  AU_EVENT_KBN     = 'AG';
+                  AU_AUDIT_ID      = FL_FAIL_ID;
+                  AU_REF_ID        = FL_SETL_ID;
+                  AU_BEFORE_STATUS = FL_STATUS_KBN;
+                  AU_AFTER_STATUS  = FL_STATUS_KBN;
+                  AU_OP_TS         = WK_OP_TS;
+                  WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+               END;
+            END;
+         END;
+      END;
+      ELSE DO;
+         SELECT(FL_STATUS_KBN);
+            WHEN('P','S') SKIP_CNT = SKIP_CNT + 1;
+            OTHERWISE DO;
+               ERR_CNT = ERR_CNT + 1;
+               SKIP_CNT = SKIP_CNT + 1;
+            END;
+         END;
+      END;
+
+      WRITE FILE(SCFAILO) FROM(SCFAIL_REC);
+      OUT_CNT = OUT_CNT + 1;
+
+      READ FILE(SCFAILI) INTO(SCFAIL_REC);
+   END;
+
+   AU_BUS_DT        = PROC_DT;
+   AU_PGM_ID        = PGM_ID;
+   AU_EVENT_KBN     = 'SM';
+   AU_AUDIT_ID      = 'SCFAIL';
+   AU_REF_ID        = '';
+   AU_BEFORE_STATUS = '';
+   AU_AFTER_STATUS  = '';
+   AU_OP_TS         = WK_OP_TS;
+   WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+
+   PUT FILE(SYSPRINT) EDIT
+      ('MIHFT 正常終了  処理日=', PROC_DT,
+       ' 入力=', IN_CNT,
+       ' 出力=', OUT_CNT,
+       ' 更新=', UPD_CNT,
+       ' 対象外=', SKIP_CNT,
+       ' カレンダ=', CAL_CNT,
+       ' 警告=', ERR_CNT)
+      (A, A, A, F(9), A, F(9), A, F(9), A, F(9), A, F(9), A, F(9));
+
+NORMAL_EXIT:
+   CLOSE FILE(SCFAILI), FILE(SCFAILO), FILE(SCCALF), FILE(SCAUDT),
+         FILE(SYSPRINT);
+   RETURN;
+
+ABEND_EXIT:
+   IF ABEND_SW THEN DO;
+      ON ERROR SYSTEM;
+      CLOSE FILE(SCFAILI), FILE(SCFAILO), FILE(SCCALF), FILE(SCAUDT),
+            FILE(SYSPRINT);
+   END;
+
+END mihft_fail_aging;

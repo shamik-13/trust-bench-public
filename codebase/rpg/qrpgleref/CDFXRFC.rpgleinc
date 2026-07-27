@@ -1,0 +1,9 @@
+       // CDFXRFC -- CDFXRF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdfxrf_rec qualified;
+         fx_rate_dt         packed(5:4);
+         fx_brand_kbn       char(2);
+         fx_ccy_cd          char(10);
+         fx_fx_rate         packed(5:4);
+         fx_markup_rate     packed(5:4);
+         fx_source_kbn      char(2);
+       end-ds;

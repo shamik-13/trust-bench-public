@@ -1,0 +1,6 @@
+# wallet_id,status,ledger_bal   (ledger_bal in 円 minor units; status per WL-WALLET-STATUS)
+W1,01,10000
+W2,01,5000
+W3,01,2000
+W4,02,10000
+W5,01,10000

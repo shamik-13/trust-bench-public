@@ -1,0 +1,11 @@
+       // CDBRDFC -- CDBRDF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdbrdf_rec qualified;
+         br_brand_setl_id   char(10);
+         br_txn_id          char(10);
+         br_card_no         char(16);
+         br_brand_kbn       char(2);
+         br_ccy_cd          char(10);
+         br_brand_amt       packed(13:2);
+         br_jpy_amt         packed(13:2);
+         br_setl_dt         packed(8:0);
+       end-ds;

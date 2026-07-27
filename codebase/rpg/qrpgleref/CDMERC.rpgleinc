@@ -1,0 +1,9 @@
+       // CDMERC -- CDMERF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdmerf_rec qualified;
+         mr_merchant_code   char(4);
+         mr_merchant_name_kana char(40);
+         mr_mcc             char(10);
+         mr_risk_rank       char(10);
+         mr_status          char(10);
+         mr_country_cd      char(10);
+       end-ds;

@@ -1,0 +1,203 @@
+/*============================================================*/
+/*  PROGRAM:   PMAUDGEN                                       */
+/*  TITLE:     監査ログ生成バッチ                             */
+/*  DESC:      LFCMNH操作履歴を契約単位で集約し、             */
+/*             LFCONF から現在の契約状態を読込、              */
+/*             ステータス遷移と操作種別集計を監査ログに記録    */
+/*============================================================*/
+/*  変更履歴                                                  */
+/*  版 | 年月日   | 担当 | 概要                               */
+/*  ---+----------+------+----------------------------------- */
+/*   1 | 20060415 | 佐藤 | 新規作成                           */
+/*   2 | 20061130 | 本田 | OPE-ID 集約ロジック修正             */
+/*   3 | 20080220 | 伊藤 | LFCMNH 圧縮形式対応                */
+/*   4 | 20120804 | 鈴木 | 処理日付パラメータ化               */
+/*============================================================*/
+
+pmaudgen: PROC OPTIONS(MAIN);
+
+%INCLUDE LFCONFC;
+%INCLUDE LFCMNHC;
+%INCLUDE LFAUDLC;
+
+ DCL 1 WORK_AREA,
+       2 WK-PROC-DATE PIC '9(8)',
+       2 WK-PREV-CON-NO PIC '9(8)',
+       2 WK-CURR-CON-NO PIC '9(8)',
+       2 WK-REC-COUNT FIXED DEC(9),
+       2 WK-GRP-COUNT FIXED DEC(9),
+       2 WK-EOF-FLAG CHAR(1) INIT('N'),
+       2 WK-ERR-FLAG CHAR(1) INIT('N'),
+       2 WK-STATUS FIXED DEC(4);
+
+ DCL 1 OPE-AGGREGATE,
+       2 AGG-CON-NO PIC '9(8)',
+       2 AGG-OPE-ID PIC 'X(6)',
+       2 AGG-OPE-COUNT FIXED DEC(5) INIT(0),
+       2 AGG-OPE-TYPE-1 FIXED DEC(5) INIT(0),
+       2 AGG-OPE-TYPE-2 FIXED DEC(5) INIT(0),
+       2 AGG-OPE-TYPE-3 FIXED DEC(5) INIT(0),
+       2 AGG-OPE-TYPE-4 FIXED DEC(5) INIT(0),
+       2 AGG-OPE-TYPE-5 FIXED DEC(5) INIT(0),
+       2 AGG-BEFORE-STATUS PIC 'XX',
+       2 AGG-AFTER-STATUS PIC 'XX';
+
+ DCL 1 CONF-REC LIKE LFCONF-REC;
+ DCL 1 CMNH-REC LIKE LFCMNH-REC;
+ DCL 1 AUDL-REC LIKE LFAUDL-REC;
+
+ DCL LFCMNH-FILE FILE RECORD INPUT;
+ DCL LFCONF-FILE FILE KEYED INPUT;
+ DCL LFAUDL-FILE FILE RECORD OUTPUT;
+
+ DCL WK-FETCH-RC FIXED DEC(4);
+
+ ON ENDFILE(LFCMNH-FILE)
+   WK-EOF-FLAG = 'Y';
+
+ ON ERROR
+   BEGIN;
+     WK-ERR-FLAG = 'Y';
+     PUT LIST('ERROR: I/O操作に失敗しました。');
+     SIGNAL ERROR;
+   END;
+
+ CALL GET_PROC_DATE;
+
+ OPEN FILE(LFCMNH-FILE);
+ OPEN FILE(LFCONF-FILE);
+ OPEN FILE(LFAUDL-FILE);
+
+ WK-PREV-CON-NO = 0;
+ WK-REC-COUNT = 0;
+ WK-GRP-COUNT = 0;
+
+ DO WHILE(WK-EOF-FLAG = 'N');
+   READ FILE(LFCMNH-FILE) INTO CMNH-REC;
+   IF WK-EOF-FLAG = 'Y' THEN
+     LEAVE;
+
+   /*--- 処理日付の検証 ---*/
+   IF CMNH-REC.CMNH-PROC-DATE ^= WK-PROC-DATE THEN
+     ITERATE;
+
+   WK-CURR-CON-NO = CMNH-REC.CMNH-CON-NO;
+
+   IF WK-CURR-CON-NO ^= WK-PREV-CON-NO THEN
+     DO;
+       /*--- 前グループの出力 ---*/
+       IF WK-PREV-CON-NO ^= 0 THEN
+         CALL WRITE_AUDIT_LOG;
+
+       /*--- 新規グループの初期化 ---*/
+       AGG-CON-NO = WK-CURR-CON-NO;
+       AGG-OPE-COUNT = 0;
+       AGG-OPE-TYPE-1 = 0;
+       AGG-OPE-TYPE-2 = 0;
+       AGG-OPE-TYPE-3 = 0;
+       AGG-OPE-TYPE-4 = 0;
+       AGG-OPE-TYPE-5 = 0;
+       AGG-BEFORE-STATUS = '00';
+       AGG-AFTER-STATUS = '00';
+
+       WK-PREV-CON-NO = WK-CURR-CON-NO;
+     END;
+
+   /*--- 同一グループ内での集約 ---*/
+   AGG-OPE-COUNT = AGG-OPE-COUNT + 1;
+   AGG-OPE-ID = CMNH-REC.CMNH-OPE-ID;
+
+   SELECT(CMNH-REC.CMNH-OPE-TYPE-KBN);
+     WHEN('01') AGG-OPE-TYPE-1 = AGG-OPE-TYPE-1 + 1;
+     WHEN('02') AGG-OPE-TYPE-2 = AGG-OPE-TYPE-2 + 1;
+     WHEN('03') AGG-OPE-TYPE-3 = AGG-OPE-TYPE-3 + 1;
+     WHEN('04') AGG-OPE-TYPE-4 = AGG-OPE-TYPE-4 + 1;
+     WHEN('05') AGG-OPE-TYPE-5 = AGG-OPE-TYPE-5 + 1;
+   END;
+
+   AGG-BEFORE-STATUS = CMNH-REC.CMNH-BEFORE-STATUS;
+   AGG-AFTER-STATUS = CMNH-REC.CMNH-AFTER-STATUS;
+
+   WK-REC-COUNT = WK-REC-COUNT + 1;
+ END;
+
+ /*--- 最終グループの出力 ---*/
+ IF WK-PREV-CON-NO ^= 0 THEN
+   CALL WRITE_AUDIT_LOG;
+
+ PUT LIST('処理完了: ' || WK-REC-COUNT || ' レコード, ' || WK-GRP-COUNT || ' 監査ログ出力');
+
+ CLOSE FILE(LFCMNH-FILE);
+ CLOSE FILE(LFCONF-FILE);
+ CLOSE FILE(LFAUDL-FILE);
+
+ IF WK-ERR-FLAG = 'Y' THEN
+   STOP RUN RETURN-CODE(1);
+ ELSE
+   STOP RUN RETURN-CODE(0);
+
+/*====== WRITE_AUDIT_LOG ======*/
+WRITE_AUDIT_LOG: PROC;
+
+ /*--- LFCONF から最新の契約状態を読み込む ---*/
+ CALL FETCH_CONF_RECORD;
+
+ /*--- LFAUDL レコード構築 ---*/
+ AUDL-REC.AUDL-CON-NO = AGG-CON-NO;
+ AUDL-REC.AUDL-PROC-DATE = WK-PROC-DATE;
+ AUDL-REC.AUDL-OPE-COUNT = AGG-OPE-COUNT;
+ AUDL-REC.AUDL-OPE-ID = AGG-OPE-ID;
+ AUDL-REC.AUDL-OPE-TYPE-1 = AGG-OPE-TYPE-1;
+ AUDL-REC.AUDL-OPE-TYPE-2 = AGG-OPE-TYPE-2;
+ AUDL-REC.AUDL-OPE-TYPE-3 = AGG-OPE-TYPE-3;
+ AUDL-REC.AUDL-OPE-TYPE-4 = AGG-OPE-TYPE-4;
+ AUDL-REC.AUDL-OPE-TYPE-5 = AGG-OPE-TYPE-5;
+ AUDL-REC.AUDL-BEFORE-STATUS = AGG-BEFORE-STATUS;
+ AUDL-REC.AUDL-AFTER-STATUS = AGG-AFTER-STATUS;
+ AUDL-REC.AUDL-CONF-STATUS = CONF-REC.CON-STATUS-KBN;
+ AUDL-REC.AUDL-TIMESTAMP = CURRENT();
+
+ WRITE FILE(LFAUDL-FILE) FROM AUDL-REC;
+
+ WK-GRP-COUNT = WK-GRP-COUNT + 1;
+
+END WRITE_AUDIT_LOG;
+
+/*====== FETCH_CONF_RECORD ======*/
+FETCH_CONF_RECORD: PROC;
+
+ READ FILE(LFCONF-FILE) 
+   KEY(AGG-CON-NO) INTO CONF-REC;
+
+ IF ENDFILE(LFCONF-FILE) THEN
+   DO;
+     CONF-REC.CON-STATUS-KBN = '99';
+     CONF-REC.CON-NO = AGG-CON-NO;
+   END;
+
+END FETCH_CONF_RECORD;
+
+/*====== GET_PROC_DATE ======*/
+GET_PROC_DATE: PROC;
+
+ /*--- コマンドライン引数から処理日付を取得 ---*/
+ /*--- 引数がない場合は前営業日を使用        ---*/
+ DECLARE PARM-STR CHAR(8);
+ DECLARE DATE-CALC FIXED DEC(8);
+
+ CALL PLIRETV(WK-STATUS, PARM-STR);
+
+ IF LENGTH(TRIM(PARM-STR)) > 0 THEN
+   DO;
+     WK-PROC-DATE = PARM-STR;
+   END;
+ ELSE
+   DO;
+     /*--- システム日付 - 1 日 ---*/
+     DATE-CALC = CURRENT() - 1;
+     WK-PROC-DATE = DATE-CALC;
+   END;
+
+END GET_PROC_DATE;
+
+END pmaudgen;

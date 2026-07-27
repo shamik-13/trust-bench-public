@@ -1,0 +1,10 @@
+       // CDEXCPF2C -- CDEXCPF2 レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdexcpf2_rec qualified;
+         exp_exception_id   char(10);
+         exp_pay_id         char(10);
+         exp_card_no        char(16);
+         exp_exception_cd   char(10);
+         exp_exception_amt  packed(13:2);
+         exp_detected_program char(10);
+         exp_detected_dt    packed(8:0);
+       end-ds;

@@ -1,0 +1,9 @@
+       // CDLATEC -- CDLATEF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdlatef_rec qualified;
+         lat_card_no        char(16);
+         lat_cycle_dt       packed(8:0);
+         lat_delinq_days    char(10);
+         lat_late_interest_amt packed(13:2);
+         lat_calc_base_amt  packed(13:2);
+         lat_calc_dt        packed(8:0);
+       end-ds;

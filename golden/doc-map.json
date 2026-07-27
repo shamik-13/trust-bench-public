@@ -1,0 +1,1743 @@
+{
+  "DOC-12186": {
+    "file": "DOC-12186.pdf",
+    "scenario": "s1-fees",
+    "doc_id": "DG-KZ110",
+    "title": "設計ガイド サイクル末手数料計算 (KZ110B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0457",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-0733",
+        "visibility_tag": "code",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-0612",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "body",
+        "note": "STALE — guide still lists PREM as an active 最優遇 tier with a dedicated rate; DECK-D0612 says PREM is deprecated→standard. The drift is the F5 signal."
+      }
+    ]
+  },
+  "DOC-13905": {
+    "file": "DOC-13905.xlsx",
+    "scenario": "s1-fees",
+    "doc_id": "RATE-XLSX",
+    "title": "優遇グループ別 超過手数料率 一覧表 (KZDGRPF)",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0772",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "merged_cell"
+      },
+      {
+        "fact_id": "D-0457",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "footnote"
+      }
+    ]
+  },
+  "DOC-56835": {
+    "file": "DOC-56835.pdf",
+    "scenario": "s1-fees",
+    "doc_id": "MINUTE-R07-031",
+    "title": "カード手数料 規制対応 検討会 (第3回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0701",
+        "visibility_tag": "tribal",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-44294": {
+    "file": "DOC-44294.pptx",
+    "scenario": "s1-fees",
+    "doc_id": "DECK-D0612",
+    "title": "PREMIERグループ廃止に伴う移行ロジックの確認 (D-0612)",
+    "render_target": "pptx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0612",
+        "visibility_tag": "doc-text",
+        "placement_hint": "slide_N"
+      }
+    ]
+  },
+  "DOC-13191": {
+    "file": "DOC-13191.pdf",
+    "scenario": "s1-fees",
+    "doc_id": "DB-KZFEEHF",
+    "title": "DB設計書 手数料履歴ファイル KZFEEHF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0701",
+        "visibility_tag": "source-invisible",
+        "placement_hint": "field_note_no_value",
+        "note": "documents that CAP-FLAG exists but NOT the ¥50,000 value — value stays minutes-only"
+      }
+    ]
+  },
+  "DOC-90719": {
+    "file": "DOC-90719.pdf",
+    "scenario": "s2-remittance",
+    "doc_id": "TG-SPEC-REJ",
+    "title": "被仕向全銀送金 拒否コード仕様書 (TG214B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0801",
+        "visibility_tag": "spec-authority",
+        "placement_hint": "body",
+        "note": "受取人名義不一致は拒否コード N1。"
+      },
+      {
+        "fact_id": "D-0804",
+        "visibility_tag": "decisive-table",
+        "placement_hint": "body",
+        "note": "FULL reject taxonomy: N1=受取人名義不一致, A1=該当口座なし, A2=口座状態不正, F1=形式不正(必須項目不備), L1=金額上限超過(上限¥10,000,000), S1=受付対象外種別。本仕様が全6コードの権威文書であり、現行コードの出力が N1 のみである点も明記。"
+      }
+    ]
+  },
+  "DOC-98175": {
+    "file": "DOC-98175.pdf",
+    "scenario": "s2-remittance",
+    "doc_id": "TG-ZENGIN-FMT",
+    "title": "全銀フォーマット仕様書 被仕向種別・仕向訂正電文",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0806",
+        "visibility_tag": "body",
+        "placement_hint": "proc_design",
+        "note": "被仕向送金種別は10=通常振込、20=給与、30=賞与、40=年金、90=訂正連絡の5種類。10/20/30/40は入金検証、90は訂正処理、その他はS1拒否。"
+      },
+      {
+        "fact_id": "D-0805",
+        "visibility_tag": "body",
+        "placement_hint": "proc_design",
+        "note": "仕向訂正電文は固定長120バイトで署名欄を持つ。署名対象項目の確定は別議事録による。"
+      },
+      {
+        "fact_id": "D-0807",
+        "visibility_tag": "body",
+        "placement_hint": "proc_design",
+        "note": "仕向訂正電文の訂正内容部 先頭2桁=訂正区分: 01=名義訂正/02=口座訂正/03=銀行訂正のみ有効、それ以外は不備として仕向訂正電文を出力しない（TG330Bが検証）。S2-C4の訂正区分検証が読める根拠。"
+      }
+    ]
+  },
+  "DOC-88293": {
+    "file": "DOC-88293.pdf",
+    "scenario": "s2-remittance",
+    "doc_id": "TG-DBD-REJLOG",
+    "title": "DB設計書 被仕向拒否ログ TGREJLF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0803",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "fields"
+      },
+      {
+        "fact_id": "D-0803",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "integrity_note",
+        "note": "TGREJLF レイアウト、拒否理由コードの論理項目 REJ-REASON と物理項目 RJ-REJ-REASON、ログキー REMIT-DT + CENTER-SEQ を本文内に明記"
+      }
+    ]
+  },
+  "DOC-71571": {
+    "file": "DOC-71571.pdf",
+    "scenario": "s2-remittance",
+    "doc_id": "TG-MIN-KANA",
+    "title": "全銀被仕向 カナ名義照合 半角統一規則 検討会 (第4回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0802",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-78160": {
+    "file": "DOC-78160.pdf",
+    "scenario": "s2-remittance",
+    "doc_id": "TG-MIN-SIG",
+    "title": "対外訂正送金 署名対象項目 確定会議 (第4回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0805",
+        "visibility_tag": "tribal",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-57644": {
+    "file": "DOC-57644.pdf",
+    "scenario": "s3-clearing",
+    "doc_id": "TG-GUIDE-CLR",
+    "title": "基本設計書 交換尻計算バッチ 相手行別ネッティング (TG530B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0901",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-0903",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-0905",
+        "visibility_tag": "doc-text",
+        "placement_hint": "intro"
+      }
+    ]
+  },
+  "DOC-55852": {
+    "file": "DOC-55852.pdf",
+    "scenario": "s3-clearing",
+    "doc_id": "TG-DBD-CLR",
+    "title": "DB設計書 交換尻 TGCLRF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "TGCLRF レイアウト",
+      "キー = CL-SETTLE-DT + CL-COUNTER-BANK",
+      "項目: CL-SETTLE-DT(交換決済日), CL-COUNTER-BANK(相手銀行番号), CL-NET-AMT(差引決済額, 符号付 S9(13)), CL-ITEM-COUNT(対象件数), CL-SETTLE-STATUS('S'=確定/'H'=保留)",
+      "出力は交換尻計算バッチ TG530B",
+      "CL-NET-AMT の符号規約は本設計書では規定せず、符号規約議事録による",
+      "CL-SETTLE-STATUS の判定条件は本書では規定せず、ジョブネット定義書による"
+    ]
+  },
+  "DOC-54225": {
+    "file": "DOC-54225.pdf",
+    "scenario": "s3-clearing",
+    "doc_id": "TG-DBD-ZEN",
+    "title": "DB設計書 全銀為替電文 TGZENF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "TGZENF は順編成ファイルである。",
+      "TGZENF の項目は ZE-VALUE-DT、ZE-CENTER-SEQ、ZE-ZEN-TYPE、ZE-COUNTER-BANK、ZE-COUNTER-BRANCH、ZE-RECV-ACCT-NO、ZE-REMIT-AMT、ZE-REMIT-NAME-KANA を含む。",
+      "ZEN-TYPE コード表は 01=仕向(自行発・支払)、02=被仕向(他行発・受取)である。",
+      "TGZENF は仕向送信 TG510B と被仕向受信 TG520B が書き出す。",
+      "TGZENF は交換尻計算 TG530B が読み込む。"
+    ]
+  },
+  "DOC-47521": {
+    "file": "DOC-47521.pdf",
+    "scenario": "s3-clearing",
+    "doc_id": "TG-JOBNET-CLR",
+    "title": "バッチジョブ定義書 交換尻計算ネット NETTG-CLEAR",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0904",
+        "visibility_tag": "precedence-ordering",
+        "placement_hint": "job_net"
+      }
+    ]
+  },
+  "DOC-64076": {
+    "file": "DOC-64076.pdf",
+    "scenario": "s3-clearing",
+    "doc_id": "TG-MIN-SIGN",
+    "title": "交換尻 符号規約 確定会議 (第3回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-0902",
+        "visibility_tag": "source-invisible",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-68945": {
+    "file": "DOC-68945.pdf",
+    "scenario": "s4-credit",
+    "doc_id": "KZ-GUIDE-CR",
+    "title": "基本設計書 与信限度見直しバッチ (KZ150B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1001",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1002",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1003",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1006",
+        "visibility_tag": "doc-text",
+        "placement_hint": "overview"
+      }
+    ]
+  },
+  "DOC-27541": {
+    "file": "DOC-27541.pdf",
+    "scenario": "s4-credit",
+    "doc_id": "KZ-DBD-CUST",
+    "title": "DB設計書 顧客マスタ KZCUSTF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "KZCUSTF レイアウト。キー = CU-CUST-ID。",
+      "KZCUSTF の項目は CU-CUST-ID(顧客番号), CU-CUST-NAME(顧客氏名), CU-BRANCH-CODE(取引店番), CU-KYC-STATUS(本人確認状況)。",
+      "D-1004: 本人確認状況は KZCUSTF の項目 KYC-STATUS(論理 CU-KYC-STATUS, PIC X(01))に格納する。",
+      "D-1004: 本人確認状況の別表は 1=確認済, 0=未確認, 9=確認保留。",
+      "D-1004: KYC-STATUS は与信限度見直し KZ150B の引上げ対象判定に使用する。"
+    ]
+  },
+  "DOC-33532": {
+    "file": "DOC-33532.pdf",
+    "scenario": "s4-credit",
+    "doc_id": "KZ-MIN-KYC",
+    "title": "与信限度 自動見直し 本人確認(KYC)ゲート 確定会議 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1002",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-14047": {
+    "file": "DOC-14047.pptx",
+    "scenario": "s4-credit",
+    "doc_id": "KZ-DECK-EXPO",
+    "title": "顧客別・商品別集計および商品別上限額によるキャップ適用方針の確認 (D-1005)",
+    "render_target": "pptx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1005",
+        "visibility_tag": "doc-text",
+        "placement_hint": "title_meta, design_points, flow_chain, findings"
+      }
+    ]
+  },
+  "DOC-56923": {
+    "file": "DOC-56923.xlsx",
+    "scenario": "s4-credit",
+    "doc_id": "KZ-TBL-EXPO",
+    "title": "商品別与信エクスポージャ上限額一覧表",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1005",
+        "visibility_tag": "authoritative-cap-table",
+        "placement_hint": "rate_rows"
+      }
+    ]
+  },
+  "DOC-40617": {
+    "file": "DOC-40617.pptx",
+    "scenario": "s5-segmentation",
+    "doc_id": "JH-DECK-SEG",
+    "title": "顧客セグメント区分 平均残高帯 確定表 (D-1102 確定値)",
+    "render_target": "pptx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1102",
+        "visibility_tag": "doc-decisive",
+        "placement_hint": "threshold_slide"
+      },
+      {
+        "fact_id": "D-1103",
+        "visibility_tag": "doc-decisive-footnote",
+        "placement_hint": "threshold_slide_footnote"
+      }
+    ]
+  },
+  "DOC-23438": {
+    "file": "DOC-23438.xlsx",
+    "scenario": "s5-segmentation",
+    "doc_id": "JH-TBL-SEG",
+    "title": "顧客セグメント残高閾値表",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1102",
+        "visibility_tag": "authoritative-threshold-table",
+        "placement_hint": "rate_rows"
+      }
+    ]
+  },
+  "DOC-64996": {
+    "file": "DOC-64996.pdf",
+    "scenario": "s5-segmentation",
+    "doc_id": "JH-MIN-SEG",
+    "title": "顧客セグメント5区分化 導入判定会議 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-36253": {
+    "file": "DOC-36253.pdf",
+    "scenario": "s5-segmentation",
+    "doc_id": "JH-DBD-SEGR",
+    "title": "DB設計書 顧客セグメント割当結果 JHSEGRF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "JHSEGRF は顧客セグメント割当結果の順編成ファイルである。",
+      "JHSEGRF の項目は SR-CUST-ID(顧客番号), SR-AVG-BAL(平均残高), SR-SEG-CD(セグメント区分), SR-SEG-NAME(セグメント名称)である。",
+      "D-1104 のセグメント区分コード体系は SG01 一般層, SG02 準優良層, SG03 優良層, SG04 上位層, SG05 プレミアム層である。",
+      "本ファイルは顧客セグメント付与バッチ JH310B が出力する。",
+      "区分ごとの残高閾値の金額は本設計書には記載しない。"
+    ]
+  },
+  "DOC-81436": {
+    "file": "DOC-81436.pdf",
+    "scenario": "s5-segmentation",
+    "doc_id": "JH-GUIDE-SEG",
+    "title": "基本設計書 顧客セグメント付与バッチ (JH310B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1101",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1105",
+        "visibility_tag": "doc-text",
+        "placement_hint": "intro"
+      }
+    ]
+  },
+  "DOC-36005": {
+    "file": "DOC-36005.pdf",
+    "scenario": "s6-calendar",
+    "doc_id": "KZ-GUIDE-CAL",
+    "title": "基本設計書 日付計算共通サブ (KZ900S)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-1201",
+      "D-1204"
+    ]
+  },
+  "DOC-81846": {
+    "file": "DOC-81846.pdf",
+    "scenario": "s6-calendar",
+    "doc_id": "KZ-MIN-HOL",
+    "title": "勘定系 サイクル境界休業日対応 方式検討会",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1201",
+        "visibility_tag": "authority",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-42090": {
+    "file": "DOC-42090.pdf",
+    "scenario": "s6-calendar",
+    "doc_id": "KZ-HEAR-CAL",
+    "title": "サイクル境界運用 申し送り ヒアリング 議事録",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1202",
+        "visibility_tag": "tribal",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-22932": {
+    "file": "DOC-22932.pdf",
+    "scenario": "s6-calendar",
+    "doc_id": "KZ-DBD-CAL",
+    "title": "DB設計書 営業日カレンダー KZCALF／サイクル基準日結果 KZCYRF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1203",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "file_spec_fields",
+        "note": "営業日カレンダー参照 (KZCALF.HOLIDAY-FLAG をキー CA-CAL-DT で読む) の構造的所在。KZ900S がこのカレンダーを参照する。"
+      },
+      {
+        "fact_id": "KZCALF",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "file_spec_fields",
+        "note": "INDEXED、キー CA-CAL-DT、CA-CAL-DT と CA-HOLIDAY-FLAG のレイアウトを記載する。"
+      },
+      {
+        "fact_id": "KZCYRF",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "file_spec_fields",
+        "note": "順編成、CR-CYCLE-ID、CR-NOMINAL-DT、CR-RESOLVED-DT、CR-ROLLED-FLAG のレイアウトを記載する。"
+      },
+      {
+        "fact_id": "KZ900S",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "overview_integrity_note",
+        "note": "KZCALF を参照する日付計算共通サブとして記載する。"
+      },
+      {
+        "fact_id": "KZ905B",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "overview_integrity_note",
+        "note": "KZCYRF を出力するサイクル基準日決定バッチとして記載する。"
+      },
+      {
+        "fact_id": "holiday-roll-direction-firewall",
+        "visibility_tag": "source-invisible",
+        "placement_hint": "integrity_note_boundary",
+        "note": "休業日時の調整/調整の方向は本設計書に記載しない。運用申し送りが根拠である旨のみ記載する。"
+      }
+    ]
+  },
+  "DOC-12580": {
+    "file": "DOC-12580.pdf",
+    "scenario": "s6-calendar",
+    "doc_id": "KZ-JOBNET-CYC",
+    "title": "バッチジョブ定義書 サイクル末基準日決定ジョブ NETKZ-CYCLE",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1201",
+        "visibility_tag": "primary-spec",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1201",
+        "visibility_tag": "job-ordering",
+        "placement_hint": "appendix"
+      }
+    ]
+  },
+  "DOC-40584": {
+    "file": "DOC-40584.pdf",
+    "scenario": "s7-warehouse",
+    "doc_id": "JH-GUIDE-DWH",
+    "title": "基本設計書 分析用DWH抽出バッチ (JH410B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1301",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1304",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-48294": {
+    "file": "DOC-48294.pdf",
+    "scenario": "s7-warehouse",
+    "doc_id": "JH-DBD-FEE",
+    "title": "DB設計書 手数料賦課履歴 KZFEEHF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1303",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "fields"
+      },
+      {
+        "fact_id": "D-1303",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "code_table"
+      },
+      {
+        "fact_id": "D-1303",
+        "visibility_tag": "policy-firewall",
+        "placement_hint": "integrity_note",
+        "note": "documents FH-CONFIRM-FLAG meaning and downstream reference only; does not state any DWH extraction filter rule"
+      }
+    ]
+  },
+  "DOC-96234": {
+    "file": "DOC-96234.pdf",
+    "scenario": "s7-warehouse",
+    "doc_id": "JH-MIN-CONF",
+    "title": "手数料確定後のDWH連携 運用方針 検討会",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1302",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-44577": {
+    "file": "DOC-44577.pdf",
+    "scenario": "s7-warehouse",
+    "doc_id": "JH-JOBNET-DWH",
+    "title": "バッチジョブ定義書 分析用DWH抽出ジョブ NETJH-DWH",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1302",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-83111": {
+    "file": "DOC-83111.pdf",
+    "scenario": "s7-warehouse",
+    "doc_id": "JH-DBD-DWH",
+    "title": "DB設計書 分析用DWH抽出 JHDWHF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "JHDWHF は順編成の分析用DWH抽出ファイルである。",
+      "JHDWHF のレイアウトは DW-ACCT-NO、DW-CYCLE-DT、DW-FEE-AMT、DW-FEE-YTD、DW-EXTRACT-DT を含む。",
+      "DW-ACCT-NO は口座番号である。",
+      "DW-CYCLE-DT はサイクル処理日である。",
+      "DW-FEE-AMT は確定手数料である。",
+      "DW-FEE-YTD は年初来累計手数料である。",
+      "DW-EXTRACT-DT は抽出日である。",
+      "分析用DWH抽出バッチ JH410B が JHDWHF を出力する。",
+      "月次収益集計が JHDWHF を参照する。",
+      "本ファイルには手数料が格納される想定である。",
+      "確定または未確定の絞り込み規則自体は本設計書では規定しない。"
+    ]
+  },
+  "DOC-48278": {
+    "file": "DOC-48278.pdf",
+    "scenario": "s8-interest",
+    "doc_id": "KZ-GUIDE-INT",
+    "title": "基本設計書 利息計算バッチ (KZ410B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1401",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1404",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "intro",
+        "note": "STALE — 概要に旧運用の 30/360 の名残を一文だけ残す。現行の日数計算方式は KZ-MIN-DAYCOUNT 参照にとどめ、本書内では具体方式を確定しない。"
+      }
+    ]
+  },
+  "DOC-49914": {
+    "file": "DOC-49914.pdf",
+    "scenario": "s8-interest",
+    "doc_id": "KZ-MIN-DAYCOUNT",
+    "title": "利息日数計算方式 設計方針 検討会",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1403",
+        "visibility_tag": "source-invisible",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-13811": {
+    "file": "DOC-13811.pdf",
+    "scenario": "s8-interest",
+    "doc_id": "KZ-MIN-BASIS",
+    "title": "勘定系 利息計算 基準日の取扱い 検討会",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1402",
+        "visibility_tag": "authority",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-68982": {
+    "file": "DOC-68982.pdf",
+    "scenario": "s8-interest",
+    "doc_id": "KZ-DBD-CYR",
+    "title": "DB設計書 サイクル基準日結果 KZCYRF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1402",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "file_spec_fields",
+        "note": "KZCYRF は順編成。CR-CYCLE-ID、CR-NOMINAL-DT、CR-RESOLVED-DT、CR-ROLLED-FLAG のレイアウトを記載する。"
+      },
+      {
+        "fact_id": "D-1402",
+        "visibility_tag": "doc-field-definition",
+        "placement_hint": "fields",
+        "note": "CR-RESOLVED-DT は名目末日が休業日のとき休業日調整後のサイクル基準日を保持する項目として定義する。"
+      },
+      {
+        "fact_id": "D-1402",
+        "visibility_tag": "doc-scope-boundary",
+        "placement_hint": "integrity_note",
+        "note": "後続プログラムが利息計算でこの項目を期間終点に使うか等の運用規則、および日数計算方式は本設計書では規定しない。"
+      }
+    ]
+  },
+  "DOC-95598": {
+    "file": "DOC-95598.pdf",
+    "scenario": "s8-interest",
+    "doc_id": "KZ-DBD-INT",
+    "title": "DB設計書 利息計算結果ファイル KZINTF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1401",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "fields"
+      }
+    ]
+  },
+  "DOC-42083": {
+    "file": "DOC-42083.pdf",
+    "scenario": "s9-delinquency",
+    "doc_id": "KZ-GUIDE-DLQ",
+    "title": "基本設計書 延滞判定・遅延損害金バッチ (KZ510B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1501",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1504",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "body",
+        "note": "STALE — guide intentionally retains one legacy-operation sentence saying old operation charged immediately after due date with no grace period and had no automatic collection-status transition; current grace-period handling is deferred to operational handover, and transition details are delegated to KZ-SPEC-DLQ, the delinquency bucket table, and KZ-MIN-DLQ without stating the approved threshold."
+      }
+    ]
+  },
+  "DOC-30130": {
+    "file": "DOC-30130.pdf",
+    "scenario": "s9-delinquency",
+    "doc_id": "KZ-HEAR-DLQ",
+    "title": "延滞・遅延損害金 運用 申し送り ヒアリング",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1503",
+        "visibility_tag": "tribal",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-34565": {
+    "file": "DOC-34565.xlsx",
+    "scenario": "s9-delinquency",
+    "doc_id": "KZ-TBL-AGE",
+    "title": "延滞 経過区分表 (延滞日数→経過区分→管理区分)",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1502",
+        "visibility_tag": "doc-text",
+        "note": "aging bucket day-ranges (B1=1-30, B2=31-60, B3=61-90, B4=91+) and the management category per bucket (B1/B2=延滞, B3/B4=回収対象). This is R24's home: which bucket triggers collection."
+      }
+    ]
+  },
+  "DOC-84838": {
+    "file": "DOC-84838.pdf",
+    "scenario": "s9-delinquency",
+    "doc_id": "KZ-SPEC-DLQ",
+    "title": "延滞ステータス管理 仕様書 (KZ510B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1502",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-48773": {
+    "file": "DOC-48773.pdf",
+    "scenario": "s9-delinquency",
+    "doc_id": "KZ-MIN-DLQ",
+    "title": "延滞管理 回収移行基準 検討会 議事録",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1502",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-89560": {
+    "file": "DOC-89560.pdf",
+    "scenario": "s9-delinquency",
+    "doc_id": "KZ-DBD-DLR",
+    "title": "DB設計書 延滞判定結果ファイル KZDLRF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1501",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "fields"
+      }
+    ]
+  },
+  "DOC-94250": {
+    "file": "DOC-94250.pdf",
+    "scenario": "s10-tax",
+    "doc_id": "KZ-GUIDE-TAX",
+    "title": "基本設計書 源泉徴収税計算バッチ (KZ620B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1601",
+        "visibility_tag": "cross-modal-link",
+        "placement_hint": "body"
+      },
+      {
+        "fact_id": "D-1605",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "intro",
+        "note": "STALE — 概要に旧運用の一律税率および合算後一括切捨ての名残を一文だけ残す。現行の口座区分別税率、NISA等非課税、端数処理方式は本書で確定せず、KZ-TBL-RATE・KZ-NTC-NISA・KZ-MIN-ROUND への参照に留める。"
+      }
+    ]
+  },
+  "DOC-82905": {
+    "file": "DOC-82905.xlsx",
+    "scenario": "s10-tax",
+    "doc_id": "KZ-TBL-RATE",
+    "title": "利子等に係る源泉徴収税率表 (口座区分別)",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1603",
+        "visibility_tag": "doc-text",
+        "note": "per-account-type rates: 一般 national 15.315% + local 5%; 法人 national 15.315% only (no 5% 利子割). NISA deferred to the 非課税 notice (multi-doc assembly for R26)."
+      }
+    ]
+  },
+  "DOC-98080": {
+    "file": "DOC-98080.pdf",
+    "scenario": "s10-tax",
+    "doc_id": "KZ-NTC-NISA",
+    "title": "NISA口座 利子等非課税 取扱通知 検討会",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1602",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-45812": {
+    "file": "DOC-45812.pdf",
+    "scenario": "s10-tax",
+    "doc_id": "KZ-MIN-ROUND",
+    "title": "源泉徴収税 端数処理基準 検討会",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1604",
+        "visibility_tag": "doc-text",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-80205": {
+    "file": "DOC-80205.pdf",
+    "scenario": "s10-tax",
+    "doc_id": "KZ-DBD-TXR",
+    "title": "DB設計書 源泉徴収結果ファイル KZTXRF",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1601",
+        "visibility_tag": "doc-structural",
+        "placement_hint": "fields"
+      }
+    ]
+  },
+  "DOC-26286": {
+    "file": "DOC-26286.pptx",
+    "scenario": "s11-hft-risk",
+    "doc_id": "SEC-DECK",
+    "title": "C ホットパス + Java コントロールプレーン 構成レビュー",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-22789": {
+    "file": "DOC-22789.pdf",
+    "scenario": "s11-hft-risk",
+    "doc_id": "SEC-DB-001",
+    "title": "レコードレイアウト仕様書 発注ファイル SCORDF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-64437": {
+    "file": "DOC-64437.pdf",
+    "scenario": "s11-hft-risk",
+    "doc_id": "SEC-OPS-001",
+    "title": "運用ランブック 取引プラットフォーム (キルスイッチ/スロットル/EOD)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-70053": {
+    "file": "DOC-70053.pdf",
+    "scenario": "s11-hft-risk",
+    "doc_id": "SEC-DG-002",
+    "title": "設計ガイド OMS・ポストトレード (Java コントロールプレーン)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-33704": {
+    "file": "DOC-33704.pdf",
+    "scenario": "s11-hft-risk",
+    "doc_id": "SEC-DG-003",
+    "title": "新人向け コードリーディング・規約ガイド",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-93190": {
+    "file": "DOC-93190.pdf",
+    "scenario": "s11-hft-risk",
+    "doc_id": "SEC-MIN-RISK",
+    "title": "与信・リスク管理 検討会 (第5回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-11044": {
+    "file": "DOC-11044.pptx",
+    "scenario": "s12-hft-matching",
+    "doc_id": "SEC12-DECK",
+    "title": "C ホットパス連携と非機能・運用観点の確認 (ARCH-2511-07)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-81694": {
+    "file": "DOC-81694.pdf",
+    "scenario": "s12-hft-matching",
+    "doc_id": "SEC12-DB-001",
+    "title": "DB設計書 板ファイル SCBOOK・約定ファイル SCEXEC",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-28762": {
+    "file": "DOC-28762.pdf",
+    "scenario": "s12-hft-matching",
+    "doc_id": "SEC12-DG-001",
+    "title": "設計ガイド マッチングエンジン・板管理連携 (mihft_match)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-32760": {
+    "file": "DOC-32760.pdf",
+    "scenario": "s12-hft-matching",
+    "doc_id": "SEC12-MIN-001",
+    "title": "約定ロジック検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-14618": {
+    "file": "DOC-14618.pptx",
+    "scenario": "s13-hft-orderbook",
+    "doc_id": "SEC13-DECK",
+    "title": "C ホットパスにおける発注・価格検証・板登録連携の確認 (TS-2025-0418)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-86652": {
+    "file": "DOC-86652.pdf",
+    "scenario": "s13-hft-orderbook",
+    "doc_id": "SEC13-DB-001",
+    "title": "DB設計書 銘柄マスタ SCINSTF・発注ファイル SCORDF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-43764": {
+    "file": "DOC-43764.pdf",
+    "scenario": "s13-hft-orderbook",
+    "doc_id": "SEC13-DG-001",
+    "title": "設計ガイド 銘柄参照・板管理連携 (mihft_tick / mihft_book)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-72398": {
+    "file": "DOC-72398.pdf",
+    "scenario": "s13-hft-orderbook",
+    "doc_id": "SEC13-MIN-001",
+    "title": "HFT基盤 価格検証方式 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-93574": {
+    "file": "DOC-93574.pptx",
+    "scenario": "s14-hft-position",
+    "doc_id": "SEC14-DECK",
+    "title": "約定連携から建玉ファイル更新までのCホットパス確認 (ARCH-S14)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-73048": {
+    "file": "DOC-73048.pdf",
+    "scenario": "s14-hft-position",
+    "doc_id": "SEC14-DB-001",
+    "title": "DB設計書 建玉ファイル SCPOSF・約定ファイル SCEXEC レコードレイアウト仕様",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-51805": {
+    "file": "DOC-51805.pdf",
+    "scenario": "s14-hft-position",
+    "doc_id": "SEC14-DG-001",
+    "title": "設計ガイド 建玉更新モジュール (mihft_pos)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-SEC-004",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "3. 処理方式設計 — 平均取得単価を約定数量で加重する算定式 + 買200@1000/売100@4000→2000 の数値例。shipped code は直近約定単価(稼働パス)/符号付きネット(休止パス)のまま乖離している。"
+      }
+    ]
+  },
+  "DOC-74181": {
+    "file": "DOC-74181.pdf",
+    "scenario": "s14-hft-position",
+    "doc_id": "SEC14-MIN-001",
+    "title": "建玉評価・日中リスク参照整備 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-19750": {
+    "file": "DOC-19750.pptx",
+    "scenario": "s15-hft-grouprisk",
+    "doc_id": "SEC15-DECK",
+    "title": "Java コントロールプレーン連携および手数料計算モジュール配置の確認 (TS-2418)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-31795": {
+    "file": "DOC-31795.pdf",
+    "scenario": "s15-hft-grouprisk",
+    "doc_id": "SEC15-DB-001",
+    "title": "レコードレイアウト仕様書 顧客・与信ファイル SCCUST／手数料ファイル SCFEEF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-30550": {
+    "file": "DOC-30550.pdf",
+    "scenario": "s15-hft-grouprisk",
+    "doc_id": "SEC15-DG-001",
+    "title": "設計ガイド グループ与信集計・約定手数料計算 (GroupRiskService / mihft_fee)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-50064": {
+    "file": "DOC-50064.pdf",
+    "scenario": "s15-hft-grouprisk",
+    "doc_id": "SEC15-MIN-001",
+    "title": "グループ与信・手数料 整備方針 検討会",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-69188": {
+    "file": "DOC-69188.pptx",
+    "scenario": "s16-hft-settlement",
+    "doc_id": "SEC16-DECK",
+    "title": "約定連携・受渡日計算・名寄せネッティングの構成確認 (MS-2410-18)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-36579": {
+    "file": "DOC-36579.pdf",
+    "scenario": "s16-hft-settlement",
+    "doc_id": "SEC16-DB-001",
+    "title": "レコードレイアウト仕様書 約定・取引所カレンダー・決済指図",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-29303": {
+    "file": "DOC-29303.pdf",
+    "scenario": "s16-hft-settlement",
+    "doc_id": "SEC16-DG-001",
+    "title": "設計ガイド 約定決済指図生成・ネッティング連携 (scsettle / scnetting)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-57848": {
+    "file": "DOC-57848.pdf",
+    "scenario": "s16-hft-settlement",
+    "doc_id": "SEC16-MIN-001",
+    "title": "決済・受渡 カレンダー連携整備 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-31266": {
+    "file": "DOC-31266.pdf",
+    "scenario": "s17-card-billing",
+    "doc_id": "CD-RULE-MINPAY",
+    "title": "債権管理規程 請求サイクル最低支払額の算定規則",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-1701: 約定率5%・最低支払額¥2,000、算定式=締後残高×約定率を円未満切捨て後に最低額で下限",
+      "D-1702: 最低支払額算定の所管はCB110B/CB910S、所管文書は本規程"
+    ]
+  },
+  "DOC-39889": {
+    "file": "DOC-39889.pdf",
+    "scenario": "s17-card-billing",
+    "doc_id": "CD-RINGI-MINPAY",
+    "title": "最低支払額 約定率改定 検討会 (第6回・稟議承認)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-1701: 改定後 約定率5%・最低支払額¥2,000（改定前3%・下限なし）"
+    ]
+  },
+  "DOC-85646": {
+    "file": "DOC-85646.pdf",
+    "scenario": "s17-card-billing",
+    "doc_id": "CD-DBD-BILL",
+    "title": "DB設計書 請求確定明細 CDBILLF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-56392": {
+    "file": "DOC-56392.pdf",
+    "scenario": "s17-card-billing",
+    "doc_id": "CD-GUIDE-BILL",
+    "title": "設計ガイド 請求サイクル締め (CB110B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-87769": {
+    "file": "DOC-87769.pptx",
+    "scenario": "s18-card-authorization",
+    "doc_id": "CD18-DECK",
+    "title": "オンライン受付から与信判定・応答連携までの構成確認 (MC-2409-18)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-33562": {
+    "file": "DOC-33562.pdf",
+    "scenario": "s18-card-authorization",
+    "doc_id": "CD18-DB-001",
+    "title": "DB設計書 オーソリ関連ファイル CDAUTHF/CDARSPF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-49926": {
+    "file": "DOC-49926.pdf",
+    "scenario": "s18-card-authorization",
+    "doc_id": "CD18-DG-001",
+    "title": "設計ガイド オーソリ与信判定サービス (AuthService)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-10597": {
+    "file": "DOC-10597.pdf",
+    "scenario": "s18-card-authorization",
+    "doc_id": "CD18-MIN-001",
+    "title": "オーソリ与信判定 方針整備 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-1801",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-80778": {
+    "file": "DOC-80778.pdf",
+    "scenario": "s19-card-capture",
+    "doc_id": "CD-RULE-FXFEE",
+    "title": "海外利用に関する手数料規程 売上確定時の海外利用事務手数料算定規則 (CB510B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-1901: 海外利用事務手数料率 2.20%(改定前1.60%)、請求額=売上額+切捨て(売上額×料率)",
+      "D-1902: 料率の所管はCB510B/CB590S、所管文書は本規程"
+    ]
+  },
+  "DOC-66552": {
+    "file": "DOC-66552.pdf",
+    "scenario": "s19-card-capture",
+    "doc_id": "CD-RINGI-FXFEE",
+    "title": "海外利用事務手数料率 改定 検討会 (稟議承認)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-1901: 改定後 海外利用事務手数料率 2.20%(改定前1.60%)"
+    ]
+  },
+  "DOC-77803": {
+    "file": "DOC-77803.pdf",
+    "scenario": "s19-card-capture",
+    "doc_id": "CD-DBD-CAP",
+    "title": "DB設計書 確定請求明細 CDCAPF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-90625": {
+    "file": "DOC-90625.pdf",
+    "scenario": "s19-card-capture",
+    "doc_id": "CD-GUIDE-CAP",
+    "title": "設計ガイド 売上確定 (CB510B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-21290": {
+    "file": "DOC-21290.pptx",
+    "scenario": "s20-card-payment",
+    "doc_id": "CD20-DECK",
+    "title": "入金明細取込から消込結果記録までの連携方式確認 (S-2024-118)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-70922": {
+    "file": "DOC-70922.pdf",
+    "scenario": "s20-card-payment",
+    "doc_id": "CD20-DB-001",
+    "title": "DB設計書 入金消込関連ファイル CDOSF/CDAPPF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-69848": {
+    "file": "DOC-69848.pdf",
+    "scenario": "s20-card-payment",
+    "doc_id": "CD20-DG-001",
+    "title": "設計ガイド 入金消込バッチ (CB610B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-25575": {
+    "file": "DOC-25575.pdf",
+    "scenario": "s20-card-payment",
+    "doc_id": "CD20-MIN-001",
+    "title": "入金消込 充当方式 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-2001: 承認済みの入金消込 充当順序 = 手数料(FEE-BAL-AMT) → 利息(INTEREST-BAL-AMT) → 元本(PRINCIPAL-BAL-AMT)（各構成を満額消込後に次へ）。現行コードは逆順(元本優先)。"
+    ]
+  },
+  "DOC-84741": {
+    "file": "DOC-84741.xlsx",
+    "scenario": "s21-card-revolving",
+    "doc_id": "CD-RULE-REVSLIDE",
+    "title": "みらいカード リボ払い 残高スライド定額方式 元金定額表",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-2101",
+        "visibility_tag": "doc-text",
+        "note": "改定後 残高スライド 元金定額表: ≤100k->5,000(T1); ≤300k->10,000(T2); ≤500k->15,000(T3); >500k->20,000(T4). 円/月。手数料(月利0.0125)は別。"
+      }
+    ]
+  },
+  "DOC-40900": {
+    "file": "DOC-40900.pdf",
+    "scenario": "s21-card-revolving",
+    "doc_id": "CD-RINGI-REVSLIDE",
+    "title": "リボ払い残高スライド定額方式 元金定額改定 検討会 (稟議承認)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-2101: 改定後 残高スライド 元金定額表 (≤10万=5,000 / ≤30万=10,000 / ≤50万=15,000 / 50万超=20,000、円/月)"
+    ]
+  },
+  "DOC-22447": {
+    "file": "DOC-22447.pdf",
+    "scenario": "s21-card-revolving",
+    "doc_id": "CD21-DB-001",
+    "title": "DB設計書 残高スライド確定明細 CDRSLDF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-75843": {
+    "file": "DOC-75843.pdf",
+    "scenario": "s21-card-revolving",
+    "doc_id": "CD21-DG-001",
+    "title": "設計ガイド リボ残高スライド確定 (CB210B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-30526": {
+    "file": "DOC-30526.pptx",
+    "scenario": "s22-card-overseas",
+    "doc_id": "CD22-DECK",
+    "title": "オンライン認証・確定精算・会員照会連携の確認 (MC-2409-17)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-42779": {
+    "file": "DOC-42779.pdf",
+    "scenario": "s22-card-overseas",
+    "doc_id": "CD22-DB-001",
+    "title": "DB設計書 海外利用関連ファイル CDTXNF・CDOVSF・CDMVWF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-44759": {
+    "file": "DOC-44759.pdf",
+    "scenario": "s22-card-overseas",
+    "doc_id": "CD22-DG-001",
+    "title": "設計ガイド 海外利用 確定・精算 (CB810B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-60185": {
+    "file": "DOC-60185.pdf",
+    "scenario": "s22-card-overseas",
+    "doc_id": "CD22-MIN-001",
+    "title": "海外利用 取引区分・確定処理 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-79034": {
+    "file": "DOC-79034.pptx",
+    "scenario": "s23-pay-authorization",
+    "doc_id": "PY23-DECK",
+    "title": "みらいペイ ウォレット与信オーソリ判定基盤 アーキテクチャ概要レビュー資料",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-39705": {
+    "file": "DOC-39705.pdf",
+    "scenario": "s23-pay-authorization",
+    "doc_id": "PY23-DB-001",
+    "title": "DB設計書 オーソリ関連ファイル PYHOLDF・PYPENDF・PYARSPF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-12665": {
+    "file": "DOC-12665.pdf",
+    "scenario": "s23-pay-authorization",
+    "doc_id": "PY23-DG-001",
+    "title": "設計ガイド ウォレット与信オーソリ判定エンジン (AuthEngine)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-66548": {
+    "file": "DOC-66548.pdf",
+    "scenario": "s23-pay-authorization",
+    "doc_id": "PY23-MIN-001",
+    "title": "ウォレット与信オーソリ判定 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-2301",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-79074": {
+    "file": "DOC-79074.pptx",
+    "scenario": "s24-pay-settlement",
+    "doc_id": "PY24-DECK",
+    "title": "売上確定取込から振込ファイル生成までの連携確認 (MP-2409-17)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-65329": {
+    "file": "DOC-65329.pdf",
+    "scenario": "s24-pay-settlement",
+    "doc_id": "PY24-DB-001",
+    "title": "DB設計書 精算関連ファイル PSTXNF・PSMERF・PSSETF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-80323": {
+    "file": "DOC-80323.pdf",
+    "scenario": "s24-pay-settlement",
+    "doc_id": "PY24-DG-001",
+    "title": "設計ガイド 加盟店精算エンジン (mipay_settle)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-28128": {
+    "file": "DOC-28128.pdf",
+    "scenario": "s24-pay-settlement",
+    "doc_id": "PY24-MIN-001",
+    "title": "加盟店精算 手数料計算 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-2401",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "決定事項の脚注※ — 手数料の円未満は四捨五入・加盟店日次の集計ネットに一度だけ・net<=0は手数料0。shipped mipay_settle は切捨て(floor)のまま乖離している。"
+      }
+    ]
+  },
+  "DOC-13300": {
+    "file": "DOC-13300.xlsx",
+    "scenario": "s25-pay-fee",
+    "doc_id": "CD-RULE-MDR",
+    "title": "みらいペイ 加盟店手数料率 (MDR) 表",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-2501",
+        "visibility_tag": "doc-text",
+        "note": "改定後 加盟店手数料率(MDR)表: C1 一般物販=3.00%(300bp); C2 飲食=3.24%(324bp); C3 公共・公金=1.30%(130bp); C4 EC・通信販売=3.74%(374bp); C5 高リスク業種=4.00%(400bp). 手数料=取引額×料率, 円未満切捨て(据置)."
+      }
+    ]
+  },
+  "DOC-36942": {
+    "file": "DOC-36942.pdf",
+    "scenario": "s25-pay-fee",
+    "doc_id": "CD-RINGI-MDR",
+    "title": "加盟店手数料率(MDR)改定 検討会 (稟議承認回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-2501: 改定後 加盟店手数料率(MDR)表 (C1=3.00% / C2=3.24% / C3=1.30% / C4=3.74% / C5=4.00%)"
+    ]
+  },
+  "DOC-84406": {
+    "file": "DOC-84406.pdf",
+    "scenario": "s25-pay-fee",
+    "doc_id": "CD25-DB-001",
+    "title": "DB設計書 手数料結果ファイル PFFEEF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-34965": {
+    "file": "DOC-34965.pdf",
+    "scenario": "s25-pay-fee",
+    "doc_id": "CD25-DG-001",
+    "title": "設計ガイド 加盟店手数料算定 (MdrFeeEngine)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-12256": {
+    "file": "DOC-12256.pdf",
+    "scenario": "s26-pay-refund",
+    "doc_id": "CD-RULE-REFUND",
+    "title": "返金・チャージバック規程 返金受付可能期間",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-2601: 改定後 返金受付可能期間 = 原取引日から180日(旧90日)"
+    ]
+  },
+  "DOC-33264": {
+    "file": "DOC-33264.pdf",
+    "scenario": "s26-pay-refund",
+    "doc_id": "CD-RINGI-REFUND",
+    "title": "返金受付可能期間 改定 検討会 (稟議承認)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-2601: 改定後 返金受付可能期間 = 180日(旧90日)"
+    ]
+  },
+  "DOC-20081": {
+    "file": "DOC-20081.pdf",
+    "scenario": "s26-pay-refund",
+    "doc_id": "CD26-DB-001",
+    "title": "DB設計書 返金判定結果ファイル PRRSPF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-87185": {
+    "file": "DOC-87185.pdf",
+    "scenario": "s26-pay-refund",
+    "doc_id": "CD26-DG-001",
+    "title": "設計ガイド 返金受付判定 (RefundEngine)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-96984": {
+    "file": "DOC-96984.pptx",
+    "scenario": "s27-pay-trace",
+    "doc_id": "PY27-DECK",
+    "title": "売上確定リンクから精算ネットまでの処理境界・運用観点の確認 (MP-2409-18)",
+    "render_target": "pptx",
+    "decisive_facts": []
+  },
+  "DOC-91242": {
+    "file": "DOC-91242.pdf",
+    "scenario": "s27-pay-trace",
+    "doc_id": "PY27-DB-001",
+    "title": "レコードレイアウト仕様書 売上確定リンク PTCAPF・精算明細 PTSETF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-39479": {
+    "file": "DOC-39479.pdf",
+    "scenario": "s27-pay-trace",
+    "doc_id": "PY27-DG-001",
+    "title": "設計ガイド 売上確定リンクサービス (CaptureLinkService)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-32551": {
+    "file": "DOC-32551.pdf",
+    "scenario": "s27-pay-trace",
+    "doc_id": "PY27-MIN-001",
+    "title": "精算ネット 取扱い 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-47067": {
+    "file": "DOC-47067.xlsx",
+    "scenario": "s28-ins-premium",
+    "doc_id": "LF-RULE-PREM",
+    "title": "みらい生命 月額保険料率表 (加入年齢帯×性別)",
+    "render_target": "xlsx",
+    "decisive_facts": [
+      {
+        "fact_id": "D-2801",
+        "visibility_tag": "doc-text",
+        "note": "改定後 月額保険料率表 (保険金額¥1,000あたり月額, 円): A1 20代 男性1.10/女性0.95; A2 30代 男性1.65/女性1.40; A3 40代 男性3.20/女性2.70; A4 50代 男性6.40/女性5.20; A5 60代 男性13.20/女性10.60. 月額保険料=保険金額(千円)×料率, 円未満切捨て(据置)."
+      }
+    ]
+  },
+  "DOC-51252": {
+    "file": "DOC-51252.pdf",
+    "scenario": "s28-ins-premium",
+    "doc_id": "LF-RINGI-PREM",
+    "title": "普通終身保険 月額保険料率改定 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-2801: 改定後 月額保険料率表 (20代 男1.10/女0.95; 30代 男1.65/女1.40; 40代 男3.20/女2.70; 50代 男6.40/女5.20; 60代 男13.20/女10.60, 円/千円)"
+    ]
+  },
+  "DOC-80324": {
+    "file": "DOC-80324.pdf",
+    "scenario": "s28-ins-premium",
+    "doc_id": "LF28-DB-001",
+    "title": "DB設計書 保険料計算結果ファイル LFPRMF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-77261": {
+    "file": "DOC-77261.pdf",
+    "scenario": "s28-ins-premium",
+    "doc_id": "LF28-DG-001",
+    "title": "設計ガイド 月額保険料計算 (LF110B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-47353": {
+    "file": "DOC-47353.pdf",
+    "scenario": "s29-ins-reserve",
+    "doc_id": "LF29-RULE-001",
+    "title": "業務規程 解約返戻金計算 (LF210B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-2901",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-46594": {
+    "file": "DOC-46594.pdf",
+    "scenario": "s29-ins-reserve",
+    "doc_id": "LF29-DB-001",
+    "title": "DB設計書 解約返戻金計算結果ファイル LFCVRF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-36149": {
+    "file": "DOC-36149.pdf",
+    "scenario": "s29-ins-reserve",
+    "doc_id": "LF29-DG-001",
+    "title": "設計ガイド 解約返戻金計算バッチ (LF210B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-32067": {
+    "file": "DOC-32067.pdf",
+    "scenario": "s29-ins-reserve",
+    "doc_id": "LF29-RINGI-001",
+    "title": "解約返戻金計算 運用見直し 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-85788": {
+    "file": "DOC-85788.pdf",
+    "scenario": "s30-ins-policymaster",
+    "doc_id": "LF30-RULE-001",
+    "title": "業務規程 月払契約払込・猶予・失効・復活管理 (lf_polmaster)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-47876": {
+    "file": "DOC-47876.pdf",
+    "scenario": "s30-ins-policymaster",
+    "doc_id": "LF30-DB-001",
+    "title": "DB設計書 失効・復活管理ファイル LFLAPF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-27426": {
+    "file": "DOC-27426.pdf",
+    "scenario": "s30-ins-policymaster",
+    "doc_id": "LF30-DG-001",
+    "title": "設計ガイド 月払契約保全バッチ (lf_polmaster / lf_reinstate)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-97847": {
+    "file": "DOC-97847.pdf",
+    "scenario": "s30-ins-policymaster",
+    "doc_id": "LF30-RINGI-001",
+    "title": "契約保全 業務運用見直し 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-57050": {
+    "file": "DOC-57050.pdf",
+    "scenario": "s31-ins-claims",
+    "doc_id": "LF-RULE-CLAIM",
+    "title": "保険金支払規程 責任開始日経過年数に応じた削減支払の定め",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-3101: 改定後 支払削減割合 = 責任開始日から1年未満60%(旧75%), 1年以上100%; 支払額=保険金額×割合(切捨)−契約者貸付元利金, 下限0"
+    ]
+  },
+  "DOC-79917": {
+    "file": "DOC-79917.pdf",
+    "scenario": "s31-ins-claims",
+    "doc_id": "LF-RINGI-CLAIM",
+    "title": "支払削減割合 改定 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-3101: 支払削減割合を75%→60%に改定(責任開始日から1年未満); 1年以上は100%据置"
+    ]
+  },
+  "DOC-59721": {
+    "file": "DOC-59721.pdf",
+    "scenario": "s31-ins-claims",
+    "doc_id": "LF31-DB-001",
+    "title": "DB設計書 保険金支払結果ファイル LFPAYF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-67082": {
+    "file": "DOC-67082.pdf",
+    "scenario": "s31-ins-claims",
+    "doc_id": "LF31-DG-001",
+    "title": "設計ガイド 保険金支払額算定エンジン (ClaimPayoutEngine)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-48534": {
+    "file": "DOC-48534.pdf",
+    "scenario": "s32-common-cif",
+    "doc_id": "CM32-RULE-001",
+    "title": "顧客名寄せ統合キー 業務規程 (CM110B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      {
+        "fact_id": "D-3201",
+        "visibility_tag": "doc-code-drift",
+        "placement_hint": "body"
+      }
+    ]
+  },
+  "DOC-26241": {
+    "file": "DOC-26241.pdf",
+    "scenario": "s32-common-cif",
+    "doc_id": "CM32-DB-001",
+    "title": "DB設計書 名寄せ統合キー結果ファイル CMKEYF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-93108": {
+    "file": "DOC-93108.pdf",
+    "scenario": "s32-common-cif",
+    "doc_id": "CM32-DG-001",
+    "title": "設計ガイド 顧客名寄せ統合キー生成 (CM110B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-86193": {
+    "file": "DOC-86193.pdf",
+    "scenario": "s32-common-cif",
+    "doc_id": "CM32-RINGI-001",
+    "title": "顧客名寄せ統合キー運用見直し 打合せ",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-24509": {
+    "file": "DOC-24509.pdf",
+    "scenario": "s33-common-calendar",
+    "doc_id": "CC33-RINGI-001",
+    "title": "グループ資金集中 受渡日基準 改定 検討会 (稟議承認)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-3301: 資金受渡日 = 指図日の翌々営業日(2営業日後)、休業日はスキップ"
+    ]
+  },
+  "DOC-43486": {
+    "file": "DOC-43486.pdf",
+    "scenario": "s33-common-calendar",
+    "doc_id": "CC33-RULE-001",
+    "title": "設計ガイド グループ資金集中規程 (CC110B)",
+    "render_target": "pdf",
+    "decisive_facts": [
+      "D-3301: 資金受渡日 = 指図日の翌々営業日(2営業日後)"
+    ]
+  },
+  "DOC-94735": {
+    "file": "DOC-94735.pdf",
+    "scenario": "s33-common-calendar",
+    "doc_id": "CC33-DB-001",
+    "title": "DB設計書 受渡日確定結果ファイル CCVALF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-16349": {
+    "file": "DOC-16349.pdf",
+    "scenario": "s33-common-calendar",
+    "doc_id": "CC33-DG-001",
+    "title": "設計ガイド 資金集中受渡日確定 (CC110B)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-22212": {
+    "file": "DOC-22212.pdf",
+    "scenario": "s34-common-idmap",
+    "doc_id": "CM34-RULE-001",
+    "title": "統合監査ジャーナル相互参照 業務規程",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-71386": {
+    "file": "DOC-71386.pdf",
+    "scenario": "s34-common-idmap",
+    "doc_id": "CM34-DB-001",
+    "title": "DB設計書 統合監査ジャーナル CMAUDF",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-88390": {
+    "file": "DOC-88390.pdf",
+    "scenario": "s34-common-idmap",
+    "doc_id": "CM34-DG-001",
+    "title": "設計ガイド 取引ID相互参照",
+    "render_target": "pdf",
+    "decisive_facts": []
+  },
+  "DOC-28132": {
+    "file": "DOC-28132.pdf",
+    "scenario": "s34-common-idmap",
+    "doc_id": "CM34-RINGI-001",
+    "title": "統合監査基盤 運用見直し 検討会 (第2回)",
+    "render_target": "pdf",
+    "decisive_facts": []
+  }
+}

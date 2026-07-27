@@ -1,0 +1,50 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20200903   決済一課   新規作成 (決済経路解決)            */
+/*  01.02    20230208   決済一課   同順位重複時のエラー出力を追加     */
+/*--------------------------------------------------------------------*/
+
+mihft_route_resolver: PROC OPTIONS(MAIN);
+
+   DCL SCROUT2 FILE RECORD INPUT;
+   DCL SCSETL  FILE RECORD INPUT;
+   DCL SCAUDT  FILE RECORD OUTPUT;
+
+   %INCLUDE SCROUT2C;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCAUDTC;
+
+   DCL EOF_SETL    BIT(1) INIT('0'B);
+   DCL FOUND_ROUTE BIT(1);
+   DCL WK_DEST     CHAR(4);
+   DCL WK_PRIO     FIXED DEC(3,0);
+
+   ON ENDFILE(SCSETL) EOF_SETL = '1'B;
+
+   OPEN FILE(SCROUT2) INPUT; OPEN FILE(SCSETL) INPUT; OPEN FILE(SCAUDT) OUTPUT;
+
+   READ FILE(SCSETL) INTO(SCSETL_REC);
+   DO WHILE(^EOF_SETL);
+      FOUND_ROUTE = '0'B; WK_PRIO = 999;
+      /* INSTR-CODE / SETL-KBN 一致の有効ルートを優先順位順に検索 */
+      CALL FIND_ROUTE(ST_INSTR_CODE, ST_SETL_KBN, WK_DEST, FOUND_ROUTE);
+      IF ^FOUND_ROUTE THEN
+      DO;
+         AU_EVENT_KBN = 'ROUTE_NF';
+         AU_REF_ID    = ST_INSTR_CODE;
+         WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+      END;
+      READ FILE(SCSETL) INTO(SCSETL_REC);
+   END;
+
+   CLOSE FILE(SCROUT2); CLOSE FILE(SCSETL); CLOSE FILE(SCAUDT);
+
+FIND_ROUTE: PROC(P_INSTR, P_KBN, P_DEST, P_FOUND);
+   DCL P_INSTR CHAR(4); DCL P_KBN CHAR(4);
+   DCL P_DEST CHAR(4);  DCL P_FOUND BIT(1);
+   /* 有効ルート表 SCROUT2 を走査し最初の DEST-KBN を返す (詳細略) */
+   P_FOUND = '1'B; P_DEST = 'JSCC';
+END FIND_ROUTE;
+
+END mihft_route_resolver;

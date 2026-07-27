@@ -1,0 +1,1091 @@
+[
+ {
+  "id": "D-0457",
+  "visibility": "code-partial->doc-completes",
+  "scenario": "s1-fees",
+  "title": "超過手数料は料率方式（DGRPテーブル参照）",
+  "docs": [
+   "DOC-12186",
+   "DOC-13905"
+  ],
+  "programs": [
+   "KZ125S",
+   "KZ120S"
+  ]
+ },
+ {
+  "id": "D-0772",
+  "visibility": "doc-structural",
+  "scenario": "s1-fees",
+  "title": "料率改定（改定前→改定後）",
+  "docs": [
+   "DOC-13905"
+  ],
+  "programs": [
+   "KZ125S"
+  ]
+ },
+ {
+  "id": "D-0701",
+  "visibility": "source-invisible",
+  "scenario": "s1-fees",
+  "title": "サイクル上限 ¥50,000",
+  "docs": [
+   "DOC-56835"
+  ],
+  "programs": [
+   "KZ115B"
+  ]
+ },
+ {
+  "id": "D-0612",
+  "visibility": "doc-code-drift",
+  "scenario": "s1-fees",
+  "title": "PREMIERグループの新設および廃止",
+  "docs": [
+   "DOC-44294",
+   "DOC-12186"
+  ],
+  "programs": [
+   "KZ120S"
+  ]
+ },
+ {
+  "id": "D-0733",
+  "visibility": "code",
+  "scenario": "s1-fees",
+  "title": "手数料端数は円未満切捨",
+  "docs": [
+   "DOC-12186"
+  ],
+  "programs": [
+   "KZ130S"
+  ]
+ },
+ {
+  "id": "D-1601",
+  "visibility": "code",
+  "scenario": "s10-tax",
+  "title": "源泉徴収税計算バッチの新設",
+  "docs": [
+   "DOC-94250",
+   "DOC-80205"
+  ],
+  "programs": [
+   "KZ620B"
+  ]
+ },
+ {
+  "id": "D-1602",
+  "visibility": "doc-text",
+  "scenario": "s10-tax",
+  "title": "NISA口座の利子等非課税",
+  "docs": [
+   "DOC-98080"
+  ],
+  "programs": [
+   "KZ620B"
+  ]
+ },
+ {
+  "id": "D-1603",
+  "visibility": "cross-modal-link",
+  "scenario": "s10-tax",
+  "title": "口座区分別の源泉徴収税率（法人は地方税対象外）",
+  "docs": [
+   "DOC-82905"
+  ],
+  "programs": [
+   "KZ620B"
+  ]
+ },
+ {
+  "id": "D-1604",
+  "visibility": "provenance",
+  "scenario": "s10-tax",
+  "title": "源泉徴収税の端数処理（国税・地方税を別個に切捨て）",
+  "docs": [
+   "DOC-45812"
+  ],
+  "programs": [
+   "KZ620B"
+  ]
+ },
+ {
+  "id": "D-1605",
+  "visibility": "doc-code-drift",
+  "scenario": "s10-tax",
+  "title": "旧・口座区分一律課税運用の廃止",
+  "docs": [
+   "DOC-94250"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-SEC-001",
+  "visibility": "code-scattered",
+  "scenario": "s11-hft-risk",
+  "title": "発注前与信はグループ与信 + 1件あたり想定元本上限",
+  "docs": [],
+  "programs": [
+   "mihft_risk",
+   "mihft_margin"
+  ]
+ },
+ {
+  "id": "D-SEC-002",
+  "visibility": "code-scattered",
+  "scenario": "s12-hft-matching",
+  "title": "約定はプライス・タイム優先（同値はFIFO）",
+  "docs": [],
+  "programs": [
+   "mihft_book",
+   "mihft_match"
+  ]
+ },
+ {
+  "id": "D-SEC-005",
+  "visibility": "code-implicit",
+  "scenario": "s12-hft-matching",
+  "title": "有効期間（TIF）の約定後処理",
+  "docs": [],
+  "programs": [
+   "mihft_match"
+  ]
+ },
+ {
+  "id": "D-SEC-003",
+  "visibility": "code-drift",
+  "scenario": "s13-hft-orderbook",
+  "title": "注文価格は銘柄ティックサイズの整数倍",
+  "docs": [],
+  "programs": [
+   "mihft_tick",
+   "mihft_book"
+  ]
+ },
+ {
+  "id": "D-SEC-004",
+  "visibility": "doc-code-drift",
+  "scenario": "s14-hft-position",
+  "title": "建玉の平均取得単価は約定数量で加重した平均",
+  "docs": [
+   "DOC-51805"
+  ],
+  "programs": [
+   "mihft_pos"
+  ]
+ },
+ {
+  "id": "D-SEC-007",
+  "visibility": "code-scattered",
+  "scenario": "s15-hft-grouprisk",
+  "title": "グループ与信集計は総額（グロス）エクスポージャー",
+  "docs": [],
+  "programs": [
+   "GroupRiskService"
+  ]
+ },
+ {
+  "id": "D-SEC-006",
+  "visibility": "code",
+  "scenario": "s15-hft-grouprisk",
+  "title": "約定手数料は約定代金×料率（最低手数料あり）",
+  "docs": [],
+  "programs": [
+   "mihft_fee"
+  ]
+ },
+ {
+  "id": "D-SEC-008",
+  "visibility": "code-cross-language",
+  "scenario": "s16-hft-settlement",
+  "title": "約定の受渡日は T+2（休業日は翌営業日へ繰延）",
+  "docs": [],
+  "programs": [
+   "scsettle"
+  ]
+ },
+ {
+  "id": "D-1701",
+  "visibility": "source-invisible",
+  "scenario": "s17-card-billing",
+  "title": "最低支払額の算定（約定率・最低支払額）",
+  "docs": [
+   "DOC-31266",
+   "DOC-39889"
+  ],
+  "programs": [
+   "CB110B",
+   "CB910S"
+  ]
+ },
+ {
+  "id": "D-1702",
+  "visibility": "locate-authority",
+  "scenario": "s17-card-billing",
+  "title": "最低支払額ルールの所管プログラムと根拠文書",
+  "docs": [
+   "DOC-31266"
+  ],
+  "programs": [
+   "CB110B"
+  ]
+ },
+ {
+  "id": "D-1801",
+  "visibility": "doc-code-drift",
+  "scenario": "s18-card-authorization",
+  "title": "利用可能枠は与信限度から現残高と未確定オーソリ・ホールドを差し引く",
+  "docs": [
+   "DOC-10597"
+  ],
+  "programs": [
+   "AuthService"
+  ]
+ },
+ {
+  "id": "D-1802",
+  "visibility": "code-cross-language",
+  "scenario": "s18-card-authorization",
+  "title": "利用可能枠算定の所管とホールドの定義",
+  "docs": [],
+  "programs": [
+   "AuthService"
+  ]
+ },
+ {
+  "id": "D-1901",
+  "visibility": "source-invisible",
+  "scenario": "s19-card-capture",
+  "title": "海外利用の事務手数料率（売上確定時に加算）",
+  "docs": [
+   "DOC-80778",
+   "DOC-66552"
+  ],
+  "programs": [
+   "CB510B",
+   "CB590S"
+  ]
+ },
+ {
+  "id": "D-1902",
+  "visibility": "locate-authority",
+  "scenario": "s19-card-capture",
+  "title": "海外事務手数料率の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-80778"
+  ],
+  "programs": [
+   "CB510B"
+  ]
+ },
+ {
+  "id": "D-0801",
+  "visibility": "code",
+  "scenario": "s2-remittance",
+  "title": "被仕向送金の名義不一致拒否",
+  "docs": [
+   "DOC-90719"
+  ],
+  "programs": [
+   "TG214B"
+  ]
+ },
+ {
+  "id": "D-0802",
+  "visibility": "cross-modal-link",
+  "scenario": "s2-remittance",
+  "title": "カナ名義照合の半角統一規則",
+  "docs": [
+   "DOC-71571"
+  ],
+  "programs": [
+   "TG912S"
+  ]
+ },
+ {
+  "id": "D-0803",
+  "visibility": "doc-structural",
+  "scenario": "s2-remittance",
+  "title": "被仕向拒否理由コード項目の永続化",
+  "docs": [
+   "DOC-88293"
+  ],
+  "programs": [
+   "TG214B",
+   "TG920S"
+  ]
+ },
+ {
+  "id": "D-0804",
+  "visibility": "code-partial->doc-completes",
+  "scenario": "s2-remittance",
+  "title": "被仕向拒否コード体系（全分類）",
+  "docs": [
+   "DOC-90719"
+  ],
+  "programs": [
+   "TG214B"
+  ]
+ },
+ {
+  "id": "D-0805",
+  "visibility": "cross-modal-link",
+  "scenario": "s2-remittance",
+  "title": "対外訂正送金の作成と署名",
+  "docs": [
+   "DOC-98175",
+   "DOC-78160"
+  ],
+  "programs": [
+   "TG330B"
+  ]
+ },
+ {
+  "id": "D-0806",
+  "visibility": "code-partial->doc-completes",
+  "scenario": "s2-remittance",
+  "title": "被仕向送金種別の5分類処理",
+  "docs": [
+   "DOC-98175"
+  ],
+  "programs": [
+   "TG214B"
+  ]
+ },
+ {
+  "id": "D-2001",
+  "visibility": "doc-code-drift",
+  "scenario": "s20-card-payment",
+  "title": "入金の消込充当順序は 手数料 → 利息 → 元本",
+  "docs": [
+   "DOC-25575"
+  ],
+  "programs": [
+   "CB610B"
+  ]
+ },
+ {
+  "id": "D-2002",
+  "visibility": "code-cross-language",
+  "scenario": "s20-card-payment",
+  "title": "消込充当順序の所管",
+  "docs": [],
+  "programs": [
+   "CB610B"
+  ]
+ },
+ {
+  "id": "D-2101",
+  "visibility": "source-invisible",
+  "scenario": "s21-card-revolving",
+  "title": "残高スライド定額方式の元金定額（リボ残高帯別の元金定額表）",
+  "docs": [
+   "DOC-84741",
+   "DOC-40900"
+  ],
+  "programs": [
+   "CB210B",
+   "CB290S"
+  ]
+ },
+ {
+  "id": "D-2102",
+  "visibility": "locate-authority",
+  "scenario": "s21-card-revolving",
+  "title": "残高スライド表の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-84741"
+  ],
+  "programs": [
+   "CB210B"
+  ]
+ },
+ {
+  "id": "D-2201",
+  "visibility": "code-cross-language",
+  "scenario": "s22-card-overseas",
+  "title": "海外ATM現金引出の取引区分(C2)と確定時の利息・手数料の扱い",
+  "docs": [],
+  "programs": [
+   "CA301R",
+   "CB810B",
+   "OverseasCashingService"
+  ]
+ },
+ {
+  "id": "D-2202",
+  "visibility": "code-cross-language",
+  "scenario": "s22-card-overseas",
+  "title": "取引区分ロジックの所管プログラムと言語横断",
+  "docs": [],
+  "programs": [
+   "CA301R",
+   "CB810B"
+  ]
+ },
+ {
+  "id": "D-2301",
+  "visibility": "doc-code-drift",
+  "scenario": "s23-pay-authorization",
+  "title": "利用可能残高は確定残高から有効ホールドと未確定決済を差し引く（失効ホールドは解放）",
+  "docs": [
+   "DOC-66548"
+  ],
+  "programs": [
+   "AuthEngine"
+  ]
+ },
+ {
+  "id": "D-2302",
+  "visibility": "code-cross-language",
+  "scenario": "s23-pay-authorization",
+  "title": "利用可能残高算定の所管とホールドの定義",
+  "docs": [],
+  "programs": [
+   "AuthEngine"
+  ]
+ },
+ {
+  "id": "D-2401",
+  "visibility": "doc-code-drift",
+  "scenario": "s24-pay-settlement",
+  "title": "決済処理手数料は加盟店日次の集計ネットに対して円未満四捨五入で算定する",
+  "docs": [
+   "DOC-28128"
+  ],
+  "programs": [
+   "mipay_settle"
+  ]
+ },
+ {
+  "id": "D-2402",
+  "visibility": "code-cross-language",
+  "scenario": "s24-pay-settlement",
+  "title": "精算手数料の丸め方法の所管プログラム",
+  "docs": [],
+  "programs": [
+   "mipay_settle"
+  ]
+ },
+ {
+  "id": "D-2501",
+  "visibility": "source-invisible",
+  "scenario": "s25-pay-fee",
+  "title": "加盟店手数料率（MDR）は業種区分別の改定後レート表で算定する",
+  "docs": [
+   "DOC-13300",
+   "DOC-36942"
+  ],
+  "programs": [
+   "MdrFeeEngine"
+  ]
+ },
+ {
+  "id": "D-2502",
+  "visibility": "locate-authority",
+  "scenario": "s25-pay-fee",
+  "title": "MDR レート表の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-13300"
+  ],
+  "programs": [
+   "MdrFeeEngine"
+  ]
+ },
+ {
+  "id": "D-2601",
+  "visibility": "source-invisible",
+  "scenario": "s26-pay-refund",
+  "title": "返金受付可能期間は改定後の180日で判定する",
+  "docs": [
+   "DOC-12256",
+   "DOC-33264"
+  ],
+  "programs": [
+   "RefundEngine"
+  ]
+ },
+ {
+  "id": "D-2602",
+  "visibility": "locate-authority",
+  "scenario": "s26-pay-refund",
+  "title": "返金受付可能期間の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-12256"
+  ],
+  "programs": [
+   "RefundEngine"
+  ]
+ },
+ {
+  "id": "D-2701",
+  "visibility": "code-cross-language",
+  "scenario": "s27-pay-trace",
+  "title": "与信ホールドは売上確定リンク(SETTLE-TXN-ID)で精算に連携し、精算区分1のみがネットされる",
+  "docs": [],
+  "programs": [
+   "CaptureLinkService",
+   "mipay_nettrace"
+  ]
+ },
+ {
+  "id": "D-2702",
+  "visibility": "code-cross-language",
+  "scenario": "s27-pay-trace",
+  "title": "連携の所管プログラム",
+  "docs": [],
+  "programs": [
+   "CaptureLinkService"
+  ]
+ },
+ {
+  "id": "D-2801",
+  "visibility": "source-invisible",
+  "scenario": "s28-ins-premium",
+  "title": "月額保険料は加入年齢帯×性別の改定後 月額保険料率表で算定する",
+  "docs": [
+   "DOC-47067",
+   "DOC-51252"
+  ],
+  "programs": [
+   "LF110B"
+  ]
+ },
+ {
+  "id": "D-2802",
+  "visibility": "locate-authority",
+  "scenario": "s28-ins-premium",
+  "title": "月額保険料率表の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-47067"
+  ],
+  "programs": [
+   "LF110B"
+  ]
+ },
+ {
+  "id": "D-2901",
+  "visibility": "doc-code-drift",
+  "scenario": "s29-ins-reserve",
+  "title": "解約控除は新契約費の120ヶ月直線償却に基づく未償却残高で算定する",
+  "docs": [
+   "DOC-47353"
+  ],
+  "programs": [
+   "LF210B"
+  ]
+ },
+ {
+  "id": "D-2902",
+  "visibility": "code-scattered",
+  "scenario": "s29-ins-reserve",
+  "title": "解約返戻金計算の所管プログラム",
+  "docs": [],
+  "programs": [
+   "LF210B"
+  ]
+ },
+ {
+  "id": "D-0901",
+  "visibility": "code",
+  "scenario": "s3-clearing",
+  "title": "交換尻計算バッチの新設",
+  "docs": [
+   "DOC-57644",
+   "DOC-55852"
+  ],
+  "programs": [
+   "TG530B"
+  ]
+ },
+ {
+  "id": "D-0903",
+  "visibility": "code",
+  "scenario": "s3-clearing",
+  "title": "相手行別ネッティング",
+  "docs": [
+   "DOC-57644"
+  ],
+  "programs": [
+   "TG530B"
+  ]
+ },
+ {
+  "id": "D-0902",
+  "visibility": "source-invisible",
+  "scenario": "s3-clearing",
+  "title": "交換尻の符号規約",
+  "docs": [
+   "DOC-64076"
+  ],
+  "programs": [
+   "TG935S",
+   "TG530B"
+  ]
+ },
+ {
+  "id": "D-0904",
+  "visibility": "precedence-ordering",
+  "scenario": "s3-clearing",
+  "title": "交換尻計算の AND 結合先行制約",
+  "docs": [
+   "DOC-47521"
+  ],
+  "programs": [
+   "TG530B"
+  ]
+ },
+ {
+  "id": "D-0905",
+  "visibility": "doc-code-drift",
+  "scenario": "s3-clearing",
+  "title": "旧・全行一括交換尻の廃止",
+  "docs": [
+   "DOC-57644"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-3001",
+  "visibility": "code-cross-language",
+  "scenario": "s30-ins-policymaster",
+  "title": "月払契約の払込猶予期間満了日は払込期月の翌々月末日、失効はその翌日",
+  "docs": [],
+  "programs": [
+   "lf_polmaster"
+  ]
+ },
+ {
+  "id": "D-3002",
+  "visibility": "code-cross-language",
+  "scenario": "s30-ins-policymaster",
+  "title": "失効契約の復活可能期間は失効日から36ヶ月",
+  "docs": [],
+  "programs": [
+   "lf_reinstate"
+  ]
+ },
+ {
+  "id": "D-3101",
+  "visibility": "source-invisible",
+  "scenario": "s31-ins-claims",
+  "title": "保険金は責任開始日から1年未満の支払事由に対し改定後の支払削減割合を乗じて支払う",
+  "docs": [
+   "DOC-57050",
+   "DOC-79917"
+  ],
+  "programs": [
+   "ClaimPayoutEngine"
+  ]
+ },
+ {
+  "id": "D-3102",
+  "visibility": "locate-authority",
+  "scenario": "s31-ins-claims",
+  "title": "保険金支払の削減割合の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-57050"
+  ],
+  "programs": [
+   "ClaimPayoutEngine"
+  ]
+ },
+ {
+  "id": "D-3201",
+  "visibility": "doc-code-drift",
+  "scenario": "s32-common-cif",
+  "title": "名寄せ統合キーの検査数字はモジュラス11・ウェイト2〜7循環で算定する",
+  "docs": [
+   "DOC-48534"
+  ],
+  "programs": [
+   "CM110B"
+  ]
+ },
+ {
+  "id": "D-3202",
+  "visibility": "code-scattered",
+  "scenario": "s32-common-cif",
+  "title": "名寄せ統合キー生成の所管プログラム",
+  "docs": [],
+  "programs": [
+   "CM110B"
+  ]
+ },
+ {
+  "id": "D-3301",
+  "visibility": "source-invisible",
+  "scenario": "s33-common-calendar",
+  "title": "グループ資金集中の資金受渡日は指図日の翌々営業日(2営業日後)とする",
+  "docs": [
+   "DOC-43486",
+   "DOC-24509"
+  ],
+  "programs": [
+   "CC110B"
+  ]
+ },
+ {
+  "id": "D-3302",
+  "visibility": "locate-authority",
+  "scenario": "s33-common-calendar",
+  "title": "資金集中受渡日確定の所管プログラムと根拠文書",
+  "docs": [
+   "DOC-43486"
+  ],
+  "programs": [
+   "CC110B"
+  ]
+ },
+ {
+  "id": "D-3401",
+  "visibility": "code-cross-language",
+  "scenario": "s34-common-idmap",
+  "title": "グループ統合取引参照番号は namespace(会社) × 10^12 + ローカル取引番号 で採番する",
+  "docs": [],
+  "programs": [
+   "GroupRefService"
+  ]
+ },
+ {
+  "id": "D-3402",
+  "visibility": "code-cross-language",
+  "scenario": "s34-common-idmap",
+  "title": "統合監査ジャーナルの逆引きは namespace を 10^12 で割って会社・ローカル番号を復元する",
+  "docs": [],
+  "programs": [
+   "AuditLinkService"
+  ]
+ },
+ {
+  "id": "D-1001",
+  "visibility": "code",
+  "scenario": "s4-credit",
+  "title": "与信限度見直しバッチの新設",
+  "docs": [
+   "DOC-68945",
+   "DOC-27541"
+  ],
+  "programs": [
+   "KZ150B"
+  ]
+ },
+ {
+  "id": "D-1003",
+  "visibility": "code",
+  "scenario": "s4-credit",
+  "title": "与信限度の算定方式（残高基準）",
+  "docs": [
+   "DOC-68945"
+  ],
+  "programs": [
+   "KZ150B"
+  ]
+ },
+ {
+  "id": "D-1002",
+  "visibility": "doc-code-drift",
+  "scenario": "s4-credit",
+  "title": "与信限度引上げの本人確認(KYC)ゲート",
+  "docs": [
+   "DOC-33532",
+   "DOC-68945"
+  ],
+  "programs": [
+   "KZ150B"
+  ]
+ },
+ {
+  "id": "D-1004",
+  "visibility": "doc-structural",
+  "scenario": "s4-credit",
+  "title": "本人確認状況項目の所在",
+  "docs": [
+   "DOC-27541"
+  ],
+  "programs": [
+   "KZ150B"
+  ]
+ },
+ {
+  "id": "D-1005",
+  "visibility": "source-invisible",
+  "scenario": "s4-credit",
+  "title": "商品別与信エクスポージャ上限",
+  "docs": [
+   "DOC-14047",
+   "DOC-56923"
+  ],
+  "programs": [
+   "KZ160B"
+  ]
+ },
+ {
+  "id": "D-1006",
+  "visibility": "doc-code-drift",
+  "scenario": "s4-credit",
+  "title": "旧・一律与信限度の廃止",
+  "docs": [
+   "DOC-68945"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-1101",
+  "visibility": "code",
+  "scenario": "s5-segmentation",
+  "title": "顧客セグメント付与バッチの新設",
+  "docs": [
+   "DOC-81436",
+   "DOC-36253"
+  ],
+  "programs": [
+   "JH310B"
+  ]
+ },
+ {
+  "id": "D-1102",
+  "visibility": "source-invisible",
+  "scenario": "s5-segmentation",
+  "title": "5段階セグメント区分の残高閾値",
+  "docs": [
+   "DOC-40617",
+   "DOC-23438"
+  ],
+  "programs": [
+   "JH315S"
+  ]
+ },
+ {
+  "id": "D-1103",
+  "visibility": "doc-structural",
+  "scenario": "s5-segmentation",
+  "title": "セグメント境界の同値タイブレーク",
+  "docs": [
+   "DOC-40617"
+  ],
+  "programs": [
+   "JH315S"
+  ]
+ },
+ {
+  "id": "D-1104",
+  "visibility": "doc-structural",
+  "scenario": "s5-segmentation",
+  "title": "セグメント区分コード体系",
+  "docs": [
+   "DOC-36253",
+   "DOC-64996"
+  ],
+  "programs": [
+   "JH315S"
+  ]
+ },
+ {
+  "id": "D-1105",
+  "visibility": "doc-code-drift",
+  "scenario": "s5-segmentation",
+  "title": "旧・3区分セグメントの廃止",
+  "docs": [
+   "DOC-81436"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-1201",
+  "visibility": "code",
+  "scenario": "s6-calendar",
+  "title": "日付計算共通サブの新設",
+  "docs": [
+   "DOC-36005",
+   "DOC-81846",
+   "DOC-12580"
+  ],
+  "programs": [
+   "KZ900S",
+   "KZ905B"
+  ]
+ },
+ {
+  "id": "D-1203",
+  "visibility": "doc-structural",
+  "scenario": "s6-calendar",
+  "title": "営業日カレンダーの参照",
+  "docs": [
+   "DOC-22932"
+  ],
+  "programs": [
+   "KZ900S"
+  ]
+ },
+ {
+  "id": "D-1202",
+  "visibility": "tribal",
+  "scenario": "s6-calendar",
+  "title": "サイクル末休業日の基準日繰上げ（前営業日）",
+  "docs": [
+   "DOC-42090"
+  ],
+  "programs": [
+   "KZ900S"
+  ]
+ },
+ {
+  "id": "D-1204",
+  "visibility": "doc-code-drift",
+  "scenario": "s6-calendar",
+  "title": "旧・翌営業日繰下げ運用の廃止",
+  "docs": [
+   "DOC-36005"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-1301",
+  "visibility": "code",
+  "scenario": "s7-warehouse",
+  "title": "分析用DWH抽出バッチの新設",
+  "docs": [
+   "DOC-40584",
+   "DOC-83111"
+  ],
+  "programs": [
+   "JH410B"
+  ]
+ },
+ {
+  "id": "D-1303",
+  "visibility": "cross-modal-link",
+  "scenario": "s7-warehouse",
+  "title": "手数料確定フラグの所在",
+  "docs": [
+   "DOC-48294"
+  ],
+  "programs": [
+   "JH410B"
+  ]
+ },
+ {
+  "id": "D-1302",
+  "visibility": "cross-modal-link",
+  "scenario": "s7-warehouse",
+  "title": "確定済手数料のみDWH抽出（確定後抽出）",
+  "docs": [
+   "DOC-96234",
+   "DOC-44577",
+   "DOC-48294"
+  ],
+  "programs": [
+   "JH410B"
+  ]
+ },
+ {
+  "id": "D-1304",
+  "visibility": "doc-code-drift",
+  "scenario": "s7-warehouse",
+  "title": "旧・全件夜間抽出運用の廃止",
+  "docs": [
+   "DOC-40584"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-1401",
+  "visibility": "code",
+  "scenario": "s8-interest",
+  "title": "利息計算バッチの新設",
+  "docs": [
+   "DOC-48278",
+   "DOC-95598"
+  ],
+  "programs": [
+   "KZ410B"
+  ]
+ },
+ {
+  "id": "D-1403",
+  "visibility": "source-invisible",
+  "scenario": "s8-interest",
+  "title": "日数計算方式（実日数・年365日）",
+  "docs": [
+   "DOC-49914"
+  ],
+  "programs": [
+   "KZ410B"
+  ]
+ },
+ {
+  "id": "D-1402",
+  "visibility": "cross-modal-link",
+  "scenario": "s8-interest",
+  "title": "利息計算の基準日（サイクル基準日＝休業日繰上げ後）",
+  "docs": [
+   "DOC-13811",
+   "DOC-68982"
+  ],
+  "programs": [
+   "KZ410B"
+  ]
+ },
+ {
+  "id": "D-1404",
+  "visibility": "doc-code-drift",
+  "scenario": "s8-interest",
+  "title": "旧・30/360 日割計算の廃止",
+  "docs": [
+   "DOC-48278"
+  ],
+  "programs": []
+ },
+ {
+  "id": "D-1501",
+  "visibility": "code",
+  "scenario": "s9-delinquency",
+  "title": "延滞判定・遅延損害金バッチの新設",
+  "docs": [
+   "DOC-42083",
+   "DOC-89560"
+  ],
+  "programs": [
+   "KZ510B"
+  ]
+ },
+ {
+  "id": "D-1503",
+  "visibility": "tribal",
+  "scenario": "s9-delinquency",
+  "title": "遅延損害金の据置期間（支払期日後10日）",
+  "docs": [
+   "DOC-30130"
+  ],
+  "programs": [
+   "KZ510B"
+  ]
+ },
+ {
+  "id": "D-1502",
+  "visibility": "doc-text",
+  "scenario": "s9-delinquency",
+  "title": "延滞ステータス遷移と回収移行基準（経過区分B3＝61日以上で回収）",
+  "docs": [
+   "DOC-34565",
+   "DOC-84838",
+   "DOC-48773"
+  ],
+  "programs": [
+   "KZ510B"
+  ]
+ },
+ {
+  "id": "D-1504",
+  "visibility": "doc-code-drift",
+  "scenario": "s9-delinquency",
+  "title": "旧・即時課金／回収自動移行なし運用の廃止",
+  "docs": [
+   "DOC-42083"
+  ],
+  "programs": []
+ }
+]

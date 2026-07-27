@@ -1,0 +1,7 @@
+       // CDBALFC -- CDBALF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdbalf_rec qualified;
+         bl_card_no         char(16);
+         bl_current_bal_amt packed(13:2);
+         bl_last_stmt_amt   packed(13:2);
+         bl_cycle_dt        packed(8:0);
+       end-ds;

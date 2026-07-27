@@ -1,0 +1,13 @@
+       // CDAUTHC -- CDAUTHF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdauthf_rec qualified;
+         au_auth_id         char(10);
+         au_card_no         char(16);
+         au_merchant_id     char(10);
+         au_auth_dt         packed(8:0);
+         au_auth_tm         char(10);
+         au_auth_amt        packed(13:2);
+         au_currency_cd     char(10);
+         au_auth_result     char(10);
+         au_approval_cd     char(10);
+         au_hold_exp_dt     packed(8:0);
+       end-ds;

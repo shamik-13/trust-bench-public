@@ -1,0 +1,9 @@
+       // CDNTFC -- CDNTFF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdntff_rec qualified;
+         nf_notice_id       char(10);
+         nf_card_no         char(16);
+         nf_notice_kbn      char(2);
+         nf_channel_cd      char(10);
+         nf_notice_ts       char(14);
+         nf_notice_text     char(10);
+       end-ds;

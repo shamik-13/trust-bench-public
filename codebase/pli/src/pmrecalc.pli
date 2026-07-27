@@ -1,0 +1,187 @@
+ /* ========================================= */
+ /* pmrecalc - 保険料再計算バッチ */
+ /* ========================================= */
+ /* 変更履歴 */
+ /* Ver 1.0 2024-04-15 丸山 初版 */
+ /* Ver 1.1 2025-01-20 前田 払込猶予中の契約も処理対象に追加 */
+ /* Ver 1.2 2025-11-10 高橋 RIDER-LOAD 計算式の検証バッチ化 */
+
+ pmrecalc: PROC OPTIONS(MAIN);
+
+    %INCLUDE LFCONFC;
+    %INCLUDE LFCMNHC;
+
+    DCL WORK-FILE FILE RECORD INPUT;
+    DCL LFCONF-FILE FILE RECORD UPDATE;
+    DCL LFCMNH-FILE FILE RECORD OUTPUT;
+    DCL SYSPRINT FILE RECORD OUTPUT;
+
+    /* 入力ワークファイル */
+    DCL 1 WORK-REC,
+        2 WF-CON-NO PIC '9(10)',
+        2 WF-CHG-REASON-KBN PIC 'XX',
+        2 WF-RIDER-CD PIC 'XXX',
+        2 WF-RIDER-LOAD FIXED DEC(7,2),
+        2 WF-FILLER PIC 'X(50)';
+
+    /* LFCONF - 契約情報マスタ */
+    DCL 1 LFCONF-REC,
+        2 CF-REC-TYPE PIC 'XX',
+        2 CF-CON-NO PIC '9(10)',
+        2 CF-CON-STATUS-KBN PIC 'XX',
+        2 CF-PAY-MODE-KBN PIC 'X',
+        2 CF-BASE-PREMIUM FIXED DEC(9,2),
+        2 CF-NET-PREMIUM FIXED DEC(9,2),
+        2 CF-PAID-KBN PIC 'X',
+        2 CF-LAST-CHANGE-DATE PIC '9(8)',
+        2 CF-FILLER PIC 'X(80)';
+
+    /* LFCMNH - 契約変更履歴マスタ */
+    DCL 1 LFCMNH-REC,
+        2 MH-REC-TYPE PIC 'XX',
+        2 MH-CON-NO PIC '9(10)',
+        2 MH-CHG-TYPE-KBN PIC 'XX',
+        2 MH-CHG-REASON-KBN PIC 'XX',
+        2 MH-OLD-VAL FIXED DEC(9,2),
+        2 MH-NEW-VAL FIXED DEC(9,2),
+        2 MH-CHG-DATE PIC '9(8)',
+        2 MH-CHG-TIME PIC '9(6)',
+        2 MH-FILLER PIC 'X(40)';
+
+    /* ワーク変数 */
+    DCL CUR-CON-NO PIC '9(10)';
+    DCL TOTAL-RIDER-LOAD FIXED DEC(9,2);
+    DCL NEW-PREMIUM FIXED DEC(9,2);
+    DCL OLD-PREMIUM FIXED DEC(9,2);
+    DCL EOF-FLAG PIC 'X' VALUE '0';
+    DCL PROC-DATE PIC '9(8)' VALUE '20260629';
+    DCL PROC-TIME PIC '9(6)' VALUE '143052';
+    DCL FIRST-REC-FLAG PIC 'X' VALUE '1';
+
+    /* ON-unit */
+    ON ENDFILE(WORK-FILE)
+        EOF-FLAG = '1';
+
+    ON ENDFILE(LFCONF-FILE)
+        BEGIN;
+            PUT EDIT ('警告: LFCONF ファイル終了') (A);
+        END;
+
+    /* ========== MAIN LOGIC ========== */
+
+    PUT EDIT ('*** pmrecalc 開始 ***') (A);
+    PUT EDIT ('実行日付:', PROC-DATE, ' 実行時刻:', PROC-TIME) 
+        (A, X(1), A(8), A, X(1), A(6));
+
+    OPEN FILE(WORK-FILE) INPUT;
+    OPEN FILE(LFCONF-FILE) UPDATE;
+    OPEN FILE(LFCMNH-FILE) OUTPUT;
+
+    LFCONF-REC.CF-REC-TYPE = 'CF';
+    LFCMNH-REC.MH-REC-TYPE = 'MH';
+    LFCMNH-REC.MH-CHG-TYPE-KBN = 'PR';
+    LFCMNH-REC.MH-CHG-DATE = PROC-DATE;
+    LFCMNH-REC.MH-CHG-TIME = PROC-TIME;
+
+    /* ========== 処理ループ ========== */
+    DO WHILE (EOF-FLAG = '0');
+        READ FILE(WORK-FILE) INTO WORK-REC;
+        IF EOF-FLAG = '1' THEN LEAVE;
+
+        IF FIRST-REC-FLAG = '1' THEN
+            DO;
+                CUR-CON-NO = WORK-REC.WF-CON-NO;
+                TOTAL-RIDER-LOAD = 0;
+                FIRST-REC-FLAG = '0';
+            END;
+
+        /* 契約番号が変わった場合は前の契約を更新 */
+        IF WORK-REC.WF-CON-NO ^= CUR-CON-NO THEN
+            DO;
+                CALL PROCESS-CONTRACT(CUR-CON-NO, TOTAL-RIDER-LOAD, PROC-DATE, PROC-TIME);
+                CUR-CON-NO = WORK-REC.WF-CON-NO;
+                TOTAL-RIDER-LOAD = 0;
+            END;
+
+        /* ライダーロードを累積 */
+        TOTAL-RIDER-LOAD = TOTAL-RIDER-LOAD + WORK-REC.WF-RIDER-LOAD;
+        PUT EDIT ('RIDER:', WORK-REC.WF-RIDER-CD, ' LOAD:', WORK-REC.WF-RIDER-LOAD) 
+            (A, X(1), A, X(1), F(7,2));
+
+    END; /* DO WHILE */
+
+    /* 最後の契約を処理 */
+    IF FIRST-REC-FLAG = '0' THEN
+        CALL PROCESS-CONTRACT(CUR-CON-NO, TOTAL-RIDER-LOAD, PROC-DATE, PROC-TIME);
+
+    CLOSE FILE(WORK-FILE);
+    CLOSE FILE(LFCONF-FILE);
+    CLOSE FILE(LFCMNH-FILE);
+
+    PUT EDIT ('*** pmrecalc 正常終了 ***') (A);
+    STOP RUN;
+
+    /* ========== 契約処理手続き ========== */
+    PROCESS-CONTRACT: PROC(P-CON-NO, P-TOTAL-LOAD, P-DATE, P-TIME);
+        DCL P-CON-NO PIC '9(10)';
+        DCL P-TOTAL-LOAD FIXED DEC(9,2);
+        DCL P-DATE PIC '9(8)';
+        DCL P-TIME PIC '9(6)';
+        DCL L-OLD-PREM FIXED DEC(9,2);
+        DCL L-NEW-PREM FIXED DEC(9,2);
+
+        PUT EDIT ('CON-NO=', P-CON-NO, ' 処理開始') (A, F(10,0), A);
+
+        /* LFCONF 読込 */
+        LFCONF-REC.CF-CON-NO = P-CON-NO;
+        READ FILE(LFCONF-FILE) INTO LFCONF-REC;
+
+        /* 契約ステータス検証 */
+        SELECT(LFCONF-REC.CF-CON-STATUS-KBN);
+            WHEN('05')
+                DO;
+                    PUT EDIT ('  SKIP: 失効済み') (A);
+                    RETURN;
+                END;
+            WHEN('01','03','07')
+                ;
+            OTHERWISE
+                DO;
+                    PUT EDIT ('  警告: 不正なステータス ', 
+                              LFCONF-REC.CF-CON-STATUS-KBN) (A, A);
+                    RETURN;
+                END;
+        END;
+
+        /* 保険料計算 */
+        L-OLD-PREM = LFCONF-REC.CF-NET-PREMIUM;
+        L-NEW-PREM = LFCONF-REC.CF-BASE-PREMIUM + P-TOTAL-LOAD;
+
+        /* 負値チェック */
+        IF L-NEW-PREM < 0 THEN
+            L-NEW-PREM = 0;
+
+        /* 変更なしはスキップ */
+        IF L-NEW-PREM = L-OLD-PREM THEN
+            DO;
+                PUT EDIT ('  変更なし') (A);
+                RETURN;
+            END;
+
+        /* LFCONF 更新 */
+        LFCONF-REC.CF-NET-PREMIUM = L-NEW-PREM;
+        LFCONF-REC.CF-LAST-CHANGE-DATE = P-DATE;
+        REWRITE FILE(LFCONF-FILE) FROM LFCONF-REC;
+
+        PUT EDIT ('  旧:', L-OLD-PREM, ' → 新:', L-NEW-PREM) 
+            (A, F(9,2), A, F(9,2));
+
+        /* LFCMNH 履歴記録 */
+        LFCMNH-REC.MH-CON-NO = P-CON-NO;
+        LFCMNH-REC.MH-OLD-VAL = L-OLD-PREM;
+        LFCMNH-REC.MH-NEW-VAL = L-NEW-PREM;
+        WRITE FILE(LFCMNH-FILE) FROM LFCMNH-REC;
+
+    END PROCESS-CONTRACT;
+
+ END pmrecalc;

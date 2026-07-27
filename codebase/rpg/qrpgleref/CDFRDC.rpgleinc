@@ -1,0 +1,9 @@
+       // CDFRDC -- CDFRDF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdfrdf_rec qualified;
+         fr_auth_id         char(10);
+         fr_card_no         char(16);
+         fr_fraud_score     char(10);
+         fr_rule_hit_cd     char(10);
+         fr_model_version   char(10);
+         fr_score_ts        char(14);
+       end-ds;

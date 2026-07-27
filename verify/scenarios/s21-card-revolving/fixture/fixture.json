@@ -1,0 +1,17 @@
+{
+  "_comment": "Revolving 残高スライド定額方式 behavioral fixture. Each active (01) account exercises the slide table: GOLDEN = 改定後 table (<=100k->5000/T1, <=300k->10000/T2, <=500k->15000/T3, >500k->20000/T4); START = OLD coarse table (<=200k->3000, <=500k->6000, >500k->10000). Monthly fee = truncate(rev_bal*0.0125), identical in both arms; pay = prin+fee. expect_* are GOLDEN values, so GOLDEN passes all and START fails every active case (wrong principal -> wrong pay/tier). REV...005 (status 03 解約) is a non-billable control: skipped to status S with 0/0 in BOTH arms. Amounts are yen; gen_text scales x100 into the COMP-3 fields.",
+  "cards": [
+    {"card_no": "4502000000000001", "member": "M000100001", "status": "01", "course": "STD",  "name": "ﾅｶﾞｲ ﾕｳｺ",   "start_dt": "20190401"},
+    {"card_no": "4502000000000002", "member": "M000100002", "status": "01", "course": "STD",  "name": "ｲｼﾀﾞ ﾏｺﾄ",   "start_dt": "20200115"},
+    {"card_no": "4502000000000003", "member": "M000100003", "status": "01", "course": "LONG", "name": "ﾓﾘ ｱｷﾗ",     "start_dt": "20180920"},
+    {"card_no": "4502000000000004", "member": "M000100004", "status": "01", "course": "LONG", "name": "ｵｶﾀﾞ ﾚｲ",    "start_dt": "20210710"},
+    {"card_no": "4502000000000005", "member": "M000100005", "status": "03", "course": "STD",  "name": "ﾊﾔｼ ﾄｵﾙ",    "start_dt": "20170305"}
+  ],
+  "balances": [
+    {"card_no": "4502000000000001", "cycle_dt": "20260531", "rev_bal": 100000, "carried_fee": 0, "new_rev": 0, "expect_prin": 5000,  "expect_pay": 6250,  "expect_status": "C", "expect_tier": "T1"},
+    {"card_no": "4502000000000002", "cycle_dt": "20260531", "rev_bal": 300000, "carried_fee": 0, "new_rev": 0, "expect_prin": 10000, "expect_pay": 13750, "expect_status": "C", "expect_tier": "T2"},
+    {"card_no": "4502000000000003", "cycle_dt": "20260531", "rev_bal": 500000, "carried_fee": 0, "new_rev": 0, "expect_prin": 15000, "expect_pay": 21250, "expect_status": "C", "expect_tier": "T3"},
+    {"card_no": "4502000000000004", "cycle_dt": "20260531", "rev_bal": 700000, "carried_fee": 0, "new_rev": 0, "expect_prin": 20000, "expect_pay": 28750, "expect_status": "C", "expect_tier": "T4"},
+    {"card_no": "4502000000000005", "cycle_dt": "20260531", "rev_bal": 50000,  "carried_fee": 0, "new_rev": 0, "expect_prin": 0,     "expect_pay": 0,     "expect_status": "S", "expect_tier": ""}
+  ]
+}

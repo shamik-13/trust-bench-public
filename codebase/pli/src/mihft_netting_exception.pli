@@ -1,0 +1,248 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数    年月日      担当    概要                                */
+/*    01.00   2014/04/01  村上 健司 (E-301)    初版作成                            */
+/*    01.01   2017/10/16  岡本 涼 (E-294)      決済不能明細の理由区分追加          */
+/*    01.02   2021/06/07  大野 修 (E-225)      休日区分判定をSCCALF参照へ変更      */
+/*--------------------------------------------------------------------*/
+mihft_netting_exception: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCNETPC;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCFAILC;
+   %INCLUDE SCAUDTC;
+
+   DCL SCNETF   FILE RECORD INPUT  ENV(FB RECSIZE(256));
+   DCL SCSETLF  FILE RECORD INPUT  ENV(FB RECSIZE(220));
+   DCL SCCALF   FILE RECORD INPUT  ENV(FB RECSIZE(32));
+   DCL SCFAILF  FILE RECORD OUTPUT ENV(FB RECSIZE(300));
+   DCL SCAUDTF  FILE RECORD OUTPUT ENV(FB RECSIZE(180));
+   DCL SYSIN    FILE STREAM INPUT;
+   DCL SYSPRINT FILE STREAM OUTPUT;
+
+   DCL 1 CALREC,
+         3 CAL_YMD       CHAR(8),
+         3 CAL_SESS_KBN  CHAR(1),
+         3 CAL_FILLER    CHAR(23);
+
+   DCL EOF_NET           BIT(1) INIT('0'B);
+   DCL EOF_SETL          BIT(1) INIT('0'B);
+   DCL EOF_CAL           BIT(1) INIT('0'B);
+   DCL ERR_SW            BIT(1) INIT('0'B);
+
+   DCL WK_SETL_DATE      CHAR(8);
+   DCL WK_CAL_DATE       CHAR(8);
+   DCL WK_BASE_DATE      CHAR(8);
+   DCL WK_NEXT_DATE      CHAR(8);
+   DCL WK_SESS_KBN       CHAR(1);
+   DCL WK_STATUS_KBN     CHAR(2);
+   DCL WK_NET_KBN        CHAR(2);
+   DCL WK_REASON_KBN     CHAR(2);
+   DCL WK_MSG            CHAR(80);
+   DCL WK_HOLD_STATUS    CHAR(1);
+   DCL WK_HOLD_REASON    CHAR(2);
+
+   DCL WK_YMD            PIC'99999999';
+   DCL WK_YY             FIXED DEC(4,0);
+   DCL WK_MM             FIXED DEC(2,0);
+   DCL WK_DD             FIXED DEC(2,0);
+   DCL WK_DIM            FIXED DEC(2,0);
+   DCL WK_BD_CNT         FIXED DEC(1,0);
+   DCL WK_I              FIXED DEC(5,0);
+
+   DCL WK_NET_QTY        FIXED DEC(13,0);
+   DCL WK_NET_AMT        FIXED DEC(15,0);
+   DCL WK_CASH_BAL       FIXED DEC(15,0);
+   DCL WK_POS_QTY        FIXED DEC(13,0);
+   DCL WK_SHORT_QTY      FIXED DEC(13,0);
+   DCL WK_FAIL_SEQ       FIXED DEC(9,0) INIT(0);
+   DCL WK_IN_CNT         FIXED DEC(9,0) INIT(0);
+   DCL WK_OUT_CNT        FIXED DEC(9,0) INIT(0);
+   DCL WK_SKIP_CNT       FIXED DEC(9,0) INIT(0);
+
+   DCL TODAY             BUILTIN;
+   DCL SUBSTR            BUILTIN;
+   DCL VERIFY            BUILTIN;
+   DCL LENGTH            BUILTIN;
+   DCL DECIMAL           BUILTIN;
+
+   ON ENDFILE(SCNETF)  EOF_NET = '1'B;
+   ON ENDFILE(SCSETLF) EOF_SETL = '1'B;
+   ON ENDFILE(SCCALF)  EOF_CAL = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      WK_MSG = '異常終了  ネッティング例外抽出';
+      PUT FILE(SYSPRINT) SKIP LIST(WK_MSG);
+      GOTO ABEND_RTN;
+   END;
+
+   OPEN FILE(SCNETF),
+        FILE(SCSETLF),
+        FILE(SCCALF),
+        FILE(SCFAILF),
+        FILE(SCAUDTF);
+
+   READ FILE(SCNETF)  INTO(SCNETP_REC);
+   READ FILE(SCSETLF) INTO(SCSETL_REC);
+   READ FILE(SCCALF)  INTO(CALREC);
+
+   DO WHILE(^EOF_NET);
+
+      WK_IN_CNT = WK_IN_CNT + 1;
+
+      WK_NET_KBN    = NP_NET_KBN;
+      WK_STATUS_KBN = NP_STATUS_KBN;
+      WK_NET_QTY    = NP_NET_QTY;
+      WK_NET_AMT    = NP_NET_AMT;
+      WK_REASON_KBN = '00';
+
+      /* 受渡日が営業日であることを確認する */
+      WK_SETL_DATE = NP_SETL_DT;
+      CALL GET_SESS(WK_SETL_DATE, WK_SESS_KBN);
+
+      IF WK_SESS_KBN ^= 'B' THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         CALL WRITE_AUDIT('W', '受渡日休業', NP_NET_KEY);
+      END;
+      ELSE DO;
+
+         SELECT;
+            WHEN (WK_NET_KBN = 'B' | WK_NET_KBN = 'S') DO;
+               IF (WK_NET_QTY = 0 & WK_NET_AMT ^= 0) |
+                  WK_STATUS_KBN = 'F' THEN
+                  CALL MAKE_FAIL;
+            END;
+
+            OTHERWISE DO;
+               WK_SKIP_CNT = WK_SKIP_CNT + 1;
+               CALL WRITE_AUDIT('W', 'ネット区分不正', NP_NET_KEY);
+            END;
+         END;
+
+      END;
+
+      READ FILE(SCNETF) INTO(SCNETP_REC);
+   END;
+
+   CALL WRITE_AUDIT('I', '正常終了', ' ');
+
+   CLOSE FILE(SCNETF),
+         FILE(SCSETLF),
+         FILE(SCCALF),
+         FILE(SCFAILF),
+         FILE(SCAUDTF);
+
+   PUT FILE(SYSPRINT) SKIP LIST('入力件数=', WK_IN_CNT,
+                                ' 出力件数=', WK_OUT_CNT,
+                                ' 除外件数=', WK_SKIP_CNT);
+   RETURN;
+
+MAKE_FAIL: PROC;
+
+   WK_POS_QTY     = 0;
+   WK_CASH_BAL    = 0;
+   WK_HOLD_STATUS = ' ';
+   WK_HOLD_REASON = '00';
+   WK_SHORT_QTY   = 0;
+
+   CALL mihft_position_probe
+        (NP_CIF_NO,
+         NP_INSTR_CODE,
+         NP_SETL_DT,
+         WK_NET_KBN,
+         WK_NET_QTY,
+         WK_NET_AMT,
+         WK_POS_QTY,
+         WK_CASH_BAL,
+         WK_HOLD_STATUS,
+         WK_HOLD_REASON);
+
+   SELECT;
+      WHEN (WK_HOLD_STATUS = 'N') WK_REASON_KBN = '11';
+      WHEN (WK_HOLD_STATUS = 'C') WK_REASON_KBN = '21';
+      WHEN (WK_HOLD_STATUS = 'L') WK_REASON_KBN = '31';
+      WHEN (WK_HOLD_REASON ^= '00') WK_REASON_KBN = WK_HOLD_REASON;
+      WHEN (WK_NET_QTY = 0 & WK_NET_AMT ^= 0) WK_REASON_KBN = '41';
+      WHEN (WK_STATUS_KBN = 'F') WK_REASON_KBN = '91';
+      OTHERWISE WK_REASON_KBN = '99';
+   END;
+
+   IF WK_NET_QTY > WK_POS_QTY THEN
+      WK_SHORT_QTY = WK_NET_QTY - WK_POS_QTY;
+   ELSE
+      WK_SHORT_QTY = 0;
+
+   WK_FAIL_SEQ = WK_FAIL_SEQ + 1;
+
+   FL_FAIL_ID     = SUBSTR('FL00000000',1,
+                    10 - LENGTH(TRIM(CHAR(WK_FAIL_SEQ)))) ||
+                    TRIM(CHAR(WK_FAIL_SEQ));
+   FL_SETL_ID     = NP_NET_KEY;
+   FL_CIF_NO      = NP_CIF_NO;
+   FL_INSTR_CODE  = NP_INSTR_CODE;
+   FL_SETL_DT     = NP_SETL_DT;
+   FL_STATUS_KBN  = 'F';
+   FL_REASON_KBN  = WK_REASON_KBN;
+   FL_FAIL_QTY    = WK_NET_QTY;
+   FL_FAIL_AMT    = WK_NET_AMT;
+   FL_AGE_DAYS    = '0';
+
+   WRITE FILE(SCFAILF) FROM(SCFAIL_REC);
+   WK_OUT_CNT = WK_OUT_CNT + 1;
+
+   CALL WRITE_AUDIT('I', '例外登録', FL_FAIL_ID);
+
+END MAKE_FAIL;
+
+GET_SESS: PROC(IN_YMD, OUT_SESS);
+
+   DCL IN_YMD   CHAR(8);
+   DCL OUT_SESS CHAR(1);
+
+   OUT_SESS = 'H';
+
+   DO WHILE(^EOF_CAL & CAL_YMD < IN_YMD);
+      READ FILE(SCCALF) INTO(CALREC);
+   END;
+
+   IF ^EOF_CAL & CAL_YMD = IN_YMD THEN DO;
+      IF CAL_SESS_KBN = 'B' | CAL_SESS_KBN = 'H' THEN
+         OUT_SESS = CAL_SESS_KBN;
+      ELSE
+         OUT_SESS = 'H';
+   END;
+   ELSE
+      OUT_SESS = 'H';
+
+END GET_SESS;
+
+WRITE_AUDIT: PROC(IN_KBN, IN_TEXT, IN_KEY);
+
+   DCL IN_KBN   CHAR(1);
+   DCL IN_TEXT  CHAR(20);
+   DCL IN_KEY   CHAR(10);
+
+   AU_AUDIT_ID      = SUBSTR(TODAY,3,8) || '00';
+   AU_PGM_ID        = 'MIHFTNET';
+   AU_BUS_DT        = SUBSTR(TODAY,1,8);
+   AU_REF_ID        = IN_KEY;
+   AU_EVENT_KBN     = IN_KBN || ' ';
+   AU_BEFORE_STATUS = WK_STATUS_KBN;
+   AU_AFTER_STATUS  = WK_REASON_KBN;
+   AU_OP_TS         = SUBSTR(TODAY,1,8) || '000000';
+
+   WRITE FILE(SCAUDTF) FROM(SCAUDT_REC);
+
+END WRITE_AUDIT;
+
+ABEND_RTN:
+   CALL WRITE_AUDIT('E', '異常終了', ' ');
+   CLOSE FILE(SCNETF),
+         FILE(SCSETLF),
+         FILE(SCCALF),
+         FILE(SCFAILF),
+         FILE(SCAUDTF);
+   RETURN;
+
+END mihft_netting_exception;

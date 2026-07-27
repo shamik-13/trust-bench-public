@@ -1,0 +1,104 @@
+/*--------------------------------------------------------------------*/
+/*  復活可能期限判定バッチ  lf_reinstate                              */
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20181102   保全一課   初版作成                           */
+/*  01.01    20210210   保全二課   応当日計算の月末補正               */
+/*  01.02    20240515   保全二課   稟議-L06-072 復活期間対応  */
+/*--------------------------------------------------------------------*/
+
+lf_reinstate: PROC OPTIONS(MAIN);
+
+   DCL LFLAPF  FILE RECORD UPDATE;
+
+   %INCLUDE LFLAPFC;
+
+   DCL EOF_LAP         BIT(1) INIT('0'B);
+   DCL SW_ERR          BIT(1) INIT('0'B);
+
+   DCL WK_LAP_CNT      FIXED DEC(9,0) INIT(0);
+   DCL WK_OK_CNT       FIXED DEC(9,0) INIT(0);
+   DCL WK_NG_CNT       FIXED DEC(9,0) INIT(0);
+   DCL WK_ERR_CNT      FIXED DEC(9,0) INIT(0);
+
+   /* 復活可能期間(月数)。応当日で判定。 */
+   DCL REINSTATE_WINDOW_MONTHS FIXED DEC(3,0) INIT(36);
+
+   DCL WK_LP_YYYY      FIXED DEC(4,0) INIT(0);
+   DCL WK_LP_MM        FIXED DEC(2,0) INIT(0);
+   DCL WK_LP_DD        FIXED DEC(2,0) INIT(0);
+   DCL WK_DUE_YYYY     FIXED DEC(4,0) INIT(0);
+   DCL WK_DUE_MM       FIXED DEC(2,0) INIT(0);
+   DCL WK_TOT_MM       FIXED DEC(6,0) INIT(0);
+   DCL WK_DIM          FIXED DEC(2,0) INIT(0);
+   DCL WK_DUE_DT       FIXED DEC(8,0) INIT(0);
+   DCL WK_RUN_DT       FIXED DEC(8,0) INIT(0);
+
+   DCL DIM(12) FIXED DEC(2,0) INIT(31,28,31,30,31,30,31,31,30,31,30,31);
+   DCL TODAY           CHAR(6);
+
+   ON ENDFILE(LFLAPF) EOF_LAP = '1'B;
+
+   ON ERROR BEGIN;
+      SW_ERR = '1'B;
+      WK_ERR_CNT = WK_ERR_CNT + 1;
+      PUT SKIP LIST('LF_REINSTATE 異常終了  件数=', WK_LAP_CNT,
+                    '  ERR=', WK_ERR_CNT);
+      GOTO ABEND_EXIT;
+   END;
+
+   /* 処理基準日 (システム日付 YYMMDD -> YYYYMMDD, 20xx 前提) */
+   TODAY = DATE();
+   WK_RUN_DT = 20000000 + DECIMAL(TODAY,6,0);
+
+   OPEN FILE(LFLAPF) UPDATE;
+   READ FILE(LFLAPF) INTO(LFLAPF_REC);
+
+   DO WHILE(^EOF_LAP);
+      WK_LAP_CNT = WK_LAP_CNT + 1;
+
+      WK_LP_YYYY = LP_LAPSE_DT / 10000;
+      WK_LP_MM   = MOD(LP_LAPSE_DT,10000) / 100;
+      WK_LP_DD   = MOD(LP_LAPSE_DT,100);
+
+      /* 失効日 + 36ヶ月 の応当日 */
+      WK_TOT_MM  = (WK_LP_YYYY*12 + (WK_LP_MM-1)) + REINSTATE_WINDOW_MONTHS;
+      WK_DUE_YYYY = WK_TOT_MM / 12;
+      WK_DUE_MM   = MOD(WK_TOT_MM,12) + 1;
+
+      /* 応当日が無い場合 (例: 末日) は当月末日に丸める */
+      WK_DIM = DIM(WK_DUE_MM);
+      IF WK_DUE_MM = 2 THEN DO;
+         IF MOD(WK_DUE_YYYY,4) = 0 &
+            (MOD(WK_DUE_YYYY,100) ^= 0 | MOD(WK_DUE_YYYY,400) = 0) THEN
+            WK_DIM = 29;
+      END;
+      IF WK_LP_DD > WK_DIM THEN WK_LP_DD = WK_DIM;
+
+      WK_DUE_DT = WK_DUE_YYYY*10000 + WK_DUE_MM*100 + WK_LP_DD;
+      LP_REINSTATE_DUE_DT = WK_DUE_DT;
+
+      /* 基準日が復活可能期限以内なら 復活可能(A)、超過なら 復活不可(X) */
+      IF WK_RUN_DT <= WK_DUE_DT THEN DO;
+         LP_REINST_STATUS_KBN = 'A';
+         WK_OK_CNT = WK_OK_CNT + 1;
+      END;
+      ELSE DO;
+         LP_REINST_STATUS_KBN = 'X';
+         WK_NG_CNT = WK_NG_CNT + 1;
+      END;
+
+      REWRITE FILE(LFLAPF) FROM(LFLAPF_REC);
+      READ FILE(LFLAPF) INTO(LFLAPF_REC);
+   END;
+
+   CLOSE FILE(LFLAPF);
+   PUT SKIP LIST('LF_REINSTATE 正常終了  失効=', WK_LAP_CNT,
+                 '  復活可能=', WK_OK_CNT, '  不可=', WK_NG_CNT);
+   GOTO NORMAL_EXIT;
+
+ABEND_EXIT:
+   CLOSE FILE(LFLAPF);
+NORMAL_EXIT:
+
+END lf_reinstate;

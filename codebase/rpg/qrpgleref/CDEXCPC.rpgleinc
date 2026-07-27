@@ -1,0 +1,10 @@
+       // CDEXCPC -- CDEXCPF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdexcpf_rec qualified;
+         ex_exception_id    char(10);
+         ex_sale_id         char(10);
+         ex_card_no         char(16);
+         ex_reason_cd       char(10);
+         ex_detected_pgm    char(10);
+         ex_exception_dt    packed(8:0);
+         ex_action_status   char(2);
+       end-ds;

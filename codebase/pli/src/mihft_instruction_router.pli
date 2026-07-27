@@ -1,0 +1,50 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20210610   決済一課   新規作成 (決済指図配信制御)        */
+/*  01.01    20221125   決済一課   資金不足時の保留振分を追加         */
+/*--------------------------------------------------------------------*/
+
+mihft_instruction_router: PROC OPTIONS(MAIN);
+
+   DCL SCDVPI  FILE RECORD UPDATE;
+   DCL SCROUT2 FILE RECORD INPUT;
+   DCL SCFUND  FILE RECORD INPUT;
+   DCL SCAUDT  FILE RECORD OUTPUT;
+
+   %INCLUDE SCDVPIC;
+   %INCLUDE SCROUT2C;
+   %INCLUDE SCFUNDC;
+   %INCLUDE SCAUDTC;
+
+   DCL EOF_DVPI    BIT(1) INIT('0'B);
+   DCL FUND_OK     BIT(1);
+
+   ON ENDFILE(SCDVPI) EOF_DVPI = '1'B;
+
+   OPEN FILE(SCDVPI) UPDATE; OPEN FILE(SCROUT2) INPUT;
+   OPEN FILE(SCFUND) INPUT;  OPEN FILE(SCAUDT) OUTPUT;
+
+   READ FILE(SCDVPI) INTO(SCDVPI_REC);
+   DO WHILE(^EOF_DVPI);
+      /* 経路解決 + 資金引当状態の確認 -> 配信可能 / 保留 / 取消候補 */
+      CALL CHK_FUND(DV_CIF_NO, DV_PAY_AMT, FUND_OK);
+      SELECT;
+         WHEN(^FUND_OK)        DV_MATCH_STATUS = 'HOLD';   /* 資金不足は保留 */
+         WHEN(DV_ROUTE_KBN = ' ') DV_MATCH_STATUS = 'CANC';
+         OTHERWISE             DV_MATCH_STATUS = 'SEND';
+      END;
+      REWRITE FILE(SCDVPI) FROM(SCDVPI_REC);
+      READ FILE(SCDVPI) INTO(SCDVPI_REC);
+   END;
+
+   CLOSE FILE(SCDVPI); CLOSE FILE(SCROUT2);
+   CLOSE FILE(SCFUND); CLOSE FILE(SCAUDT);
+
+CHK_FUND: PROC(P_CIF, P_AMT, P_OK);
+   DCL P_CIF CHAR(16); DCL P_AMT FIXED DEC(15,2); DCL P_OK BIT(1);
+   /* SCFUND の引当残と突合 (詳細略) */
+   P_OK = '1'B;
+END CHK_FUND;
+
+END mihft_instruction_router;

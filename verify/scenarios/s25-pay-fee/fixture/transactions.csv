@@ -1,0 +1,11 @@
+# txn_id,merchant_code,amount,dt   (amount 円)
+# T1..T5: amount 100000 -> golden(改定後) vs start(旧) differ for every category (DISCRIMINATE)
+T1,M1,100000,20260601
+T2,M2,100000,20260601
+T3,M3,100000,20260601
+T4,M4,100000,20260601
+T5,M5,100000,20260601
+# T6: small amount where C2 old/new floor to same fee (control)
+T6,M6,100,20260601
+# T7: merchant status 02 -> not charged (excluded; control absent)
+T7,M7,50000,20260601

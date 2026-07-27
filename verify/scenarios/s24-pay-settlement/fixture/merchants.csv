@@ -1,0 +1,8 @@
+# merchant_code,status   (status MR-MER-STATUS: 01 精算対象; 02 精算保留 -> excluded)
+M001,01
+M002,01
+M003,01
+M004,01
+M005,02
+M006,01
+M007,01

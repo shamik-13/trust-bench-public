@@ -1,0 +1,23 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20190716  決済一課  新規作成 (DVP照合モニタ)               */
+/*--------------------------------------------------------------------*/
+mihft_dvp_match_monitor: PROC OPTIONS(MAIN);
+   DCL SCDVPI FILE RECORD INPUT;
+   DCL SCAUDT FILE RECORD OUTPUT;
+   %INCLUDE SCDVPIC;
+   %INCLUDE SCAUDTC;
+   DCL EOF_DVPI BIT(1) INIT('0'B);
+   ON ENDFILE(SCDVPI) EOF_DVPI = '1'B;
+   OPEN FILE(SCDVPI) INPUT; OPEN FILE(SCAUDT) OUTPUT;
+   READ FILE(SCDVPI) INTO(SCDVPI_REC);
+   DO WHILE(^EOF_DVPI);
+      /* 未照合・保留の指図を監視し、滞留をイベント出力 */
+      IF DV_MATCH_STATUS = 'HOLD' THEN DO;
+         AU_EVENT_KBN = 'DVP_HOLD'; AU_REF_ID = DV_DVP_ID;
+         WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+      END;
+      READ FILE(SCDVPI) INTO(SCDVPI_REC);
+   END;
+   CLOSE FILE(SCDVPI); CLOSE FILE(SCAUDT);
+END mihft_dvp_match_monitor;

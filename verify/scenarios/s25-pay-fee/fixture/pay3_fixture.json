@@ -1,0 +1,14 @@
+{
+  "_note": "Parity mirror of the CSV fixtures for the s25 / D-2501 Java MDR-fee gate. The engine reads the CSVs directly; this records the golden(改定後) vs start(旧) fee per transaction. Decisive divergence: the per-category MDR rate table (改定後 lives only in the 規程 CD-RULE-MDR). fee = floor(amount*rate_bp/10000).",
+  "rate_bp_golden": {"C1": 300, "C2": 324, "C3": 130, "C4": 374, "C5": 400},
+  "rate_bp_start":  {"C1": 325, "C2": 325, "C3": 150, "C4": 360, "C5": 395},
+  "expected": {
+    "T1": {"cat": "C1", "amount": 100000, "fee_golden": 3000, "fee_start": 3250},
+    "T2": {"cat": "C2", "amount": 100000, "fee_golden": 3240, "fee_start": 3250},
+    "T3": {"cat": "C3", "amount": 100000, "fee_golden": 1300, "fee_start": 1500},
+    "T4": {"cat": "C4", "amount": 100000, "fee_golden": 3740, "fee_start": 3600},
+    "T5": {"cat": "C5", "amount": 100000, "fee_golden": 4000, "fee_start": 3950},
+    "T6": {"cat": "C2", "amount": 100, "fee_golden": 3, "fee_start": 3, "why": "floor(100*0.0324)=3 == floor(100*0.0325)=3 (control)"},
+    "T7": {"_excluded": "M7 status 02 -> not charged (absent from output)"}
+  }
+}

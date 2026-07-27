@@ -1,0 +1,213 @@
+/* ============================================================================ */
+/* PROGRAM-ID: pmpayrcv.                                                      */
+/* 収納消込バッチ - Payment Reconciliation Batch.                               */
+/* ============================================================================ */
+/* 変更履歴                                                                     */
+/*  版数 | 年月日   | 担当  | 概要                                             */
+/* -----|----------|-------|----------------------------------------------- */
+/*   1  | 20250101 | TK    | 初版 - 日次銀行振込受領ファイルより請求充当    */
+/*      |          |       | LFBILF・LFCONF更新、未充当例外リスト出力      */
+/* ============================================================================ */
+
+pmpayrcv: PROC OPTIONS(MAIN);
+
+  %INCLUDE LFPAYF2C;
+  %INCLUDE LFBILFC;
+  %INCLUDE LFCONFC;
+
+  DCL 1 WK-REC,
+        2 WK-CON-NO             PIC 'X(8)',
+        2 WK-APPLY-YM           PIC 'X(6)',
+        2 WK-PAY-AMT            FIXED DEC (10,0),
+        2 WK-REMAIN-AMT         FIXED DEC (10,0),
+        2 WK-BIL-COUNT          FIXED BIN (31),
+        2 WK-EOF-FLAG           PIC 'X(1)',
+        2 WK-BIL-FOUND-FLAG     PIC 'X(1)',
+        2 WK-RC                 FIXED BIN (31);
+
+  DCL WK-PAY-REC-READ           FIXED BIN (31);
+  DCL WK-BIL-REC-READ           FIXED BIN (31);
+  DCL WK-CON-REC-READ           FIXED BIN (31);
+  DCL WK-PAY-WRITTEN            FIXED BIN (31);
+  DCL WK-BIL-UPDATED            FIXED BIN (31);
+  DCL WK-CON-UPDATED            FIXED BIN (31);
+  DCL WK-EXCEPT-WRITTEN         FIXED BIN (31);
+  DCL WK-PROCESS-DATE           PIC '9(8)';
+  DCL WK-PARTIAL-AMT            FIXED DEC (10,0);
+  DCL WK-BIL-STATUS             PIC 'X(2)';
+  DCL WK-ERR-MSG                PIC 'X(100)';
+
+  /* ファイル宣言 */
+  DCL PAYF_IN     STREAM INPUT  SEQUENTIAL FILE;
+  DCL BILF_IN     STREAM INPUT  SEQUENTIAL FILE;
+  DCL BILF_OUT    STREAM OUTPUT SEQUENTIAL FILE;
+  DCL CONF_IN     STREAM INPUT  SEQUENTIAL FILE;
+  DCL CONF_OUT    STREAM OUTPUT SEQUENTIAL FILE;
+  DCL EXCEPT_OUT  STREAM OUTPUT SEQUENTIAL FILE;
+
+  /* エラーハンドリング */
+  ON ENDFILE(PAYF_IN) SET(WK-EOF-FLAG) = '1';
+  ON ERROR BEGIN;
+    PUT SKIP LIST('*** エラー発生 ***');
+    GO TO EXIT-PROG;
+  END;
+
+  WK-EOF-FLAG = '0';
+  WK-PAY-REC-READ = 0;
+  WK-BIL-UPDATED = 0;
+  WK-CON-UPDATED = 0;
+  WK-EXCEPT-WRITTEN = 0;
+
+  /* ファイル OPEN */
+  OPEN FILE(PAYF_IN)  TITLE('/data/payment/LFPAYF2');
+  OPEN FILE(BILF_IN)  TITLE('/data/master/LFBILF');
+  OPEN FILE(BILF_OUT) TITLE('/data/master/LFBILF.NEW');
+  OPEN FILE(CONF_IN)  TITLE('/data/master/LFCONF');
+  OPEN FILE(CONF_OUT) TITLE('/data/master/LFCONF.NEW');
+  OPEN FILE(EXCEPT_OUT) TITLE('/data/report/pmpayrcv_except.txt');
+
+  /* 日次処理ループ */
+  DO WHILE (WK-EOF-FLAG = '0');
+    READ FILE(PAYF_IN) INTO(PAY-REC);
+
+    IF WK-EOF-FLAG = '1' THEN LEAVE;
+
+    WK-PAY-REC-READ = WK-PAY-REC-READ + 1;
+    WK-CON-NO = PAY-CON-NO;
+    WK-APPLY-YM = PAY-APPLY-YM;
+    WK-PAY-AMT = PAY-AMT;
+    WK-REMAIN-AMT = PAY-AMT;
+    WK-BIL-FOUND-FLAG = '0';
+
+    /* LFBILF（請求）ファイル処理 */
+    REWIND FILE(BILF_IN);
+    DO WHILE ('1'B);
+      READ FILE(BILF_IN) INTO(BIL-REC);
+
+      IF BIL-CON-NO = WK-CON-NO AND 
+         BIL-APPLY-YM = WK-APPLY-YM AND
+         BIL-STATUS-KBN = '10' THEN DO;
+        
+        WK-BIL-FOUND-FLAG = '1';
+        WK-BIL-COUNT = WK-BIL-COUNT + 1;
+
+        /* 充当金額計算 */
+        IF WK-REMAIN-AMT >= BIL-AMT THEN DO;
+          WK-REMAIN-AMT = WK-REMAIN-AMT - BIL-AMT;
+          WK-BIL-STATUS = '20';  /* 完全充当 */
+          
+          WRITE FILE(BILF_OUT) FROM(BIL-REC);
+          WK-BIL-UPDATED = WK-BIL-UPDATED + 1;
+
+          /* LFCONF（契約）PAID-KBN 更新フラグ */
+          REWIND FILE(CONF_IN);
+          DO WHILE ('1'B);
+            READ FILE(CONF_IN) INTO(CON-REC);
+
+            IF CON-CON-NO = WK-CON-NO THEN DO;
+              CON-PAID-KBN = '1';  /* 入金済 */
+              WRITE FILE(CONF_OUT) FROM(CON-REC);
+              WK-CON-UPDATED = WK-CON-UPDATED + 1;
+              LEAVE;
+            END;
+            ELSE WRITE FILE(CONF_OUT) FROM(CON-REC);
+          END;
+
+        END;  /* 完全充当 */
+        ELSE DO;
+          /* 部分充当 */
+          WK-BIL-STATUS = '15';
+          WK-PARTIAL-AMT = WK-REMAIN-AMT;
+          WRITE FILE(BILF_OUT) FROM(BIL-REC);
+          WK-BIL-UPDATED = WK-BIL-UPDATED + 1;
+          
+          WK-REMAIN-AMT = 0;
+          LEAVE;  /* 残額0で次の振込へ */
+        END;
+
+      END;  /* 対象請求発見 */
+      ELSE WRITE FILE(BILF_OUT) FROM(BIL-REC);
+
+    END;  /* BILF 読み込みループ */
+
+    /* 未充当処理 */
+    IF WK-BIL-FOUND-FLAG = '0' THEN DO;
+      /* pmbilgen 呼び出し */
+      CALL pmbilgen(
+        WK-CON-NO,
+        WK-APPLY-YM,
+        WK-RC
+      );
+
+      IF WK-RC ^= 0 THEN DO;
+        WRITE FILE(EXCEPT_OUT) 
+          FROM('*** pmbilgen エラー: CON-NO=' || WK-CON-NO || 
+               ' APPLY-YM=' || WK-APPLY-YM || ' RC=' || WK-RC);
+      END;
+      ELSE DO;
+        /* pmbilgen成功後、再度 BILF 照合 */
+        REWIND FILE(BILF_IN);
+        DO WHILE ('1'B);
+          READ FILE(BILF_IN) INTO(BIL-REC);
+
+          IF BIL-CON-NO = WK-CON-NO AND 
+             BIL-APPLY-YM = WK-APPLY-YM AND
+             BIL-STATUS-KBN = '10' THEN DO;
+            
+            WK-BIL-FOUND-FLAG = '1';
+
+            IF WK-REMAIN-AMT >= BIL-AMT THEN DO;
+              WK-BIL-STATUS = '20';
+              WK-REMAIN-AMT = WK-REMAIN-AMT - BIL-AMT;
+            END;
+            ELSE IF WK-REMAIN-AMT > 0 THEN DO;
+              WK-BIL-STATUS = '15';
+              WK-REMAIN-AMT = 0;
+            END;
+
+            WRITE FILE(BILF_OUT) FROM(BIL-REC);
+            WK-BIL-UPDATED = WK-BIL-UPDATED + 1;
+            LEAVE;
+          END;
+
+        END;  /* 再照合ループ */
+
+      END;
+
+    END;  /* 未充当 */
+
+    /* 例外リスト出力 */
+    IF WK-BIL-FOUND-FLAG = '0' THEN DO;
+      WRITE FILE(EXCEPT_OUT) 
+        FROM('未充当: CON-NO=' || WK-CON-NO || 
+             ' APPLY-YM=' || WK-APPLY-YM || 
+             ' PAY-AMT=' || WK-PAY-AMT);
+      WK-EXCEPT-WRITTEN = WK-EXCEPT-WRITTEN + 1;
+    END;
+
+  END;  /* 日次ループ END */
+
+  /* ファイル CLOSE */
+  CLOSE FILE(PAYF_IN);
+  CLOSE FILE(BILF_IN);
+  CLOSE FILE(BILF_OUT);
+  CLOSE FILE(CONF_IN);
+  CLOSE FILE(CONF_OUT);
+  CLOSE FILE(EXCEPT_OUT);
+
+  /* 処理結果出力 */
+  PUT SKIP LIST('=== pmpayrcv 処理終了 ===');
+  PUT SKIP LIST('入金件数: ' || WK-PAY-REC-READ);
+  PUT SKIP LIST('請求更新件数: ' || WK-BIL-UPDATED);
+  PUT SKIP LIST('契約更新件数: ' || WK-CON-UPDATED);
+  PUT SKIP LIST('未充当件数: ' || WK-EXCEPT-WRITTEN);
+
+EXIT-PROG:
+  CLOSE FILE(PAYF_IN);
+  CLOSE FILE(BILF_IN);
+  CLOSE FILE(BILF_OUT);
+  CLOSE FILE(CONF_IN);
+  CLOSE FILE(CONF_OUT);
+  CLOSE FILE(EXCEPT_OUT);
+
+END pmpayrcv;

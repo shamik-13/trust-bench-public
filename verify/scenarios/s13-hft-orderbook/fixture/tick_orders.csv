@@ -1,0 +1,9 @@
+# order_id,instr,tier,price   (price ×100 minor units). Authoritative tick: T1=100,T2=500,T3=1000.
+# ORDA: tier2 price multiple of ¥5 (500) -> ACCEPT both (control)
+ORDA,AAA,2,4000500
+# ORDB: tier2 price multiple of ¥1 (100) but NOT ¥5 -> golden REJECT-TICK(12); start accepts (stale ¥1 table) -> discriminates
+ORDB,AAA,2,4000100
+# ORDC: tier1 price multiple of ¥1 (100) -> ACCEPT both (T1 tick same in both)
+ORDC,BBB,1,4000100
+# ORDD: tier3 price NOT multiple of ¥10 (1000) -> REJECT-TICK(12) both (T3 tick same)
+ORDD,CCC,3,4000500

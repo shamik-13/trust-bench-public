@@ -1,0 +1,11 @@
+       // CDTXNFC -- CDTXNF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdtxnf_rec qualified;
+         tx_txn_id          char(10);
+         tx_card_no         char(16);
+         tx_txn_kbn         char(2);
+         tx_channel_kbn     char(2);
+         tx_merchant_kbn    char(2);
+         tx_txn_amt         packed(13:2);
+         tx_txn_dt          packed(8:0);
+         tx_auth_cd         char(10);
+       end-ds;

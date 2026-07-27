@@ -1,0 +1,9 @@
+       // CDDELFC -- CDDELF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cddelf_rec qualified;
+         dl_card_no         char(16);
+         dl_billing_dt      packed(8:0);
+         dl_delay_days      char(10);
+         dl_due_amt         packed(13:2);
+         dl_notice_kbn      char(2);
+         dl_extract_dt      packed(8:0);
+       end-ds;

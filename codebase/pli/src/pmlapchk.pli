@@ -1,0 +1,191 @@
+/*  ============================================================  */
+/*  PROGRAM      : PMLAPCHK                                       */
+/*  説明         : 失効前最終チェックバッチ                         */
+/*  PURPOSE      : Post-lapse status reconciliation audit          */
+/*  ============================================================  */
+
+/*  ━━━━ 変更履歴 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  */
+/*  版数  年月日      担当          概要                           */
+/*  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+/*  1.0   20230101    渥美 行三     初版 — LFCONF失効状態検証ロジック */
+/*  1.1   20230315    村上由紀子    不整合レコード検出ロジック強化 */
+/*  1.2   20231127    大森 健次郎   CON-STATUS-KBN='40'一致判定    */
+/*                                   厳格化、RESULT-KBN='NG'記録   */
+/*  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+PMLAPCHK: PROC OPTIONS(MAIN);
+
+    %INCLUDE LFCONFC;       /* 契約マスタレコード定義             */
+    %INCLUDE LFLAPFC;       /* 失効レコード定義                   */
+    %INCLUDE LFAUDLC;       /* 監査ログレコード定義               */
+
+    /*  ───────────────────────────────────────────  */
+    /*  作業域定義                                   */
+    /*  ───────────────────────────────────────────  */
+
+    DCL WK-STATUS-AREA
+        2 WK-PROC-DATE          CHAR(8),        /* 処理日 YYYYMMDD */
+        2 WK-LAPSE-COUNT        FIXED DEC(9),   /* 失効検索件数     */
+        2 WK-FOUND-COUNT        FIXED DEC(9),   /* マスタ検索確認件 */
+        2 WK-STATUS-OK-COUNT    FIXED DEC(9),   /* ステータス正常件 */
+        2 WK-AUDIT-WRITE-COUNT  FIXED DEC(9),   /* 監査ログ記録件   */
+        2 WK-FILE-ERROR-COUNT   FIXED DEC(9),   /* ファイルエラー件 */
+        2 WK-EOF-FLAG           CHAR(1) VALUE('N'),
+        2 WK-ERROR-FLAG         CHAR(1) VALUE('N');
+
+    DCL WK-SEARCH-POLICY-ID     CHAR(16);
+    DCL WK-FOUND-IN-MASTER      CHAR(1);
+    DCL WK-CURRENT-STATUS       CHAR(2);
+
+    /*  ───────────────────────────────────────────  */
+    /*  ファイル宣言                                 */
+    /*  ───────────────────────────────────────────  */
+
+    DCL LFLAPF_IN   FILE RECORD SEQUENTIAL;
+    DCL LFCONF_IDX  FILE RECORD INDEXED KEYED;
+    DCL LFAUDL_OUT  FILE RECORD SEQUENTIAL;
+
+    /*  ───────────────────────────────────────────  */
+    /*  エラーハンドリング                           */
+    /*  ───────────────────────────────────────────  */
+
+    ON ENDFILE(LFLAPF_IN)
+        WK-EOF-FLAG = 'Y';
+
+    ON FILE ERROR(LFCONF_IDX)
+        DO;
+            WK-ERROR-FLAG = 'Y';
+            WK-FILE-ERROR-COUNT = WK-FILE-ERROR-COUNT + 1;
+        END;
+
+    /*  ════════════════════════════════════════════  */
+    /*  主処理開始                                   */
+    /*  ════════════════════════════════════════════  */
+
+    OPEN FILE(LFLAPF_IN)  INPUT;
+    OPEN FILE(LFCONF_IDX) INPUT;
+    OPEN FILE(LFAUDL_OUT) OUTPUT;
+
+    /*  処理日付の取得（本番：システム日付）         */
+    WK-PROC-DATE = '20250429';
+
+    /*  ─────────────────────────────────────────   */
+    /*  ステップ1: LFLAPF失効レコード反復読込         */
+    /*  ─────────────────────────────────────────   */
+
+    DO WHILE(WK-EOF-FLAG ^= 'Y');
+
+        READ FILE(LFLAPF_IN) INTO(LFLAPF_REC);
+
+        IF WK-EOF-FLAG = 'Y'
+            THEN LEAVE;
+
+        /*  失効日が本日のレコードのみ処理            */
+        IF LFLAPF_REC.LAPSE-DT ^= WK-PROC-DATE
+            THEN ITERATE;
+
+        WK-LAPSE-COUNT = WK-LAPSE-COUNT + 1;
+        WK-SEARCH-POLICY-ID = LFLAPF_REC.POLICY-ID;
+
+        /*  ─────────────────────────────────────  */
+        /*  ステップ2: 対応する契約マスタを検索      */
+        /*  ─────────────────────────────────────  */
+
+        WK-FOUND-IN-MASTER = 'N';
+
+        READ FILE(LFCONF_IDX)
+            KEY(WK-SEARCH-POLICY-ID)
+            INTO(LFCONF_REC);
+
+        IF WK-ERROR-FLAG ^= 'Y'
+            THEN WK-FOUND-IN-MASTER = 'Y'
+            ELSE WK-ERROR-FLAG = 'N';
+
+        /*  ─────────────────────────────────────  */
+        /*  ステップ3: マスタ存在確認 — 不整合判定   */
+        /*  ─────────────────────────────────────  */
+
+        IF WK-FOUND-IN-MASTER = 'N'
+            THEN
+                DO;
+                    LFAUDL_REC.AUDIT-KEY-ID = 
+                        WK-PROC-DATE || WK-SEARCH-POLICY-ID;
+                    LFAUDL_REC.OPE-TYPE-KBN = 'LC';
+                    LFAUDL_REC.RESULT-KBN = 'NG';
+                    LFAUDL_REC.BEFORE-STATUS = '??';
+                    LFAUDL_REC.AFTER-STATUS = '--';
+                    LFAUDL_REC.ANOMALY-TEXT = 
+                        'ポリシーが契約マスタに存在しません';
+
+                    WRITE FILE(LFAUDL_OUT) FROM(LFAUDL_REC);
+                    WK-AUDIT-WRITE-COUNT = WK-AUDIT-WRITE-COUNT + 1;
+
+                    ITERATE;
+                END;
+
+        /*  ─────────────────────────────────────  */
+        /*  ステップ4: CON-STATUS-KBN確認          */
+        /*  失効フラグ('40')へ更新されているか      */
+        /*  ─────────────────────────────────────  */
+
+        WK-CURRENT-STATUS = LFCONF_REC.CON-STATUS-KBN;
+        WK-FOUND-COUNT = WK-FOUND-COUNT + 1;
+
+        IF WK-CURRENT-STATUS ^= '40'
+            THEN
+                DO;
+                    LFAUDL_REC.AUDIT-KEY-ID = 
+                        WK-PROC-DATE || WK-SEARCH-POLICY-ID;
+                    LFAUDL_REC.OPE-TYPE-KBN = 'LC';
+                    LFAUDL_REC.RESULT-KBN = 'NG';
+                    LFAUDL_REC.BEFORE-STATUS = WK-CURRENT-STATUS;
+                    LFAUDL_REC.AFTER-STATUS = '40';
+                    LFAUDL_REC.ANOMALY-TEXT = 
+                        'ステータスが失効状態に更新されていません';
+
+                    WRITE FILE(LFAUDL_OUT) FROM(LFAUDL_REC);
+                    WK-AUDIT-WRITE-COUNT = WK-AUDIT-WRITE-COUNT + 1;
+                END;
+            ELSE
+                DO;
+                    WK-STATUS-OK-COUNT = WK-STATUS-OK-COUNT + 1;
+                END;
+
+    END;
+
+    /*  ────────────────────────────────────────────  */
+    /*  ファイルクローズ処理                          */
+    /*  ────────────────────────────────────────────  */
+
+    CLOSE FILE(LFLAPF_IN);
+    CLOSE FILE(LFCONF_IDX);
+    CLOSE FILE(LFAUDL_OUT);
+
+    /*  ════════════════════════════════════════════  */
+    /*  処理結果ログ出力                             */
+    /*  ════════════════════════════════════════════  */
+
+    PUT SKIP(2) EDIT('========================================')
+        (A);
+    PUT SKIP EDIT('失効前最終チェックバッチ処理完了')
+        (A);
+    PUT SKIP EDIT('========================================')
+        (A);
+    PUT SKIP EDIT('処理日付      : ', WK-PROC-DATE)
+        (A, A);
+    PUT SKIP EDIT('失効検索件数  : ', WK-LAPSE-COUNT)
+        (A, F(7));
+    PUT SKIP EDIT('マスタ検索確認: ', WK-FOUND-COUNT)
+        (A, F(7));
+    PUT SKIP EDIT('ステータス正常: ', WK-STATUS-OK-COUNT)
+        (A, F(7));
+    PUT SKIP EDIT('不整合記録件数: ', WK-AUDIT-WRITE-COUNT)
+        (A, F(7));
+    PUT SKIP EDIT('ファイルエラー: ', WK-FILE-ERROR-COUNT)
+        (A, F(7));
+    PUT SKIP EDIT('========================================')
+        (A);
+
+    STOP RUN;
+
+END PMLAPCHK;

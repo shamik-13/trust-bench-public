@@ -1,0 +1,11 @@
+       // CDAPPFC -- CDAPPF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdappf_rec qualified;
+         ap_pay_id          char(10);
+         ap_card_no         char(16);
+         ap_applied_fee_amt packed(13:2);
+         ap_applied_int_amt packed(13:2);
+         ap_applied_prin_amt packed(13:2);
+         ap_remain_amt      packed(13:2);
+         ap_app_status      char(2);
+         ap_program_id      char(10);
+       end-ds;

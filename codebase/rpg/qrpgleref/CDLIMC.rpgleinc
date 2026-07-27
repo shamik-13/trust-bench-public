@@ -1,0 +1,9 @@
+       // CDLIMC -- CDLIMF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdlimf_rec qualified;
+         lm_card_no         char(16);
+         lm_temp_limit_amt  packed(13:2);
+         lm_start_dt        packed(8:0);
+         lm_end_dt          packed(8:0);
+         lm_approval_id     char(10);
+         lm_status          char(10);
+       end-ds;

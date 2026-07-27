@@ -1,0 +1,183 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数    年月日      担当        概要                            */
+/*    0.01    2019/11/18  決済一課    初版作成                        */
+/*    0.02    2020/02/03  決済一課    休場判定の監査出力追加          */
+/*    0.03    2021/06/14  渡辺 隆 (E-260)  DVP/CASH別内部判定コード追加    */
+/*--------------------------------------------------------------------*/
+
+mihft_exec_enrich: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCEXECC;
+   %INCLUDE SCCALFC;
+   %INCLUDE SCAUDTC;
+
+   DCL EXECIN   FILE RECORD INPUT;
+   DCL EXECOUT  FILE RECORD OUTPUT;
+   DCL CALFIN   FILE RECORD INPUT;
+   DCL AUDOUT   FILE RECORD OUTPUT;
+   DCL SYSPRINT FILE STREAM OUTPUT;
+
+   DCL EOF_EXEC        BIT(1) INIT('0'B);
+   DCL EOF_CALF        BIT(1) INIT('0'B);
+   DCL ERR_SW          BIT(1) INIT('0'B);
+
+   DCL HOLD_EXEC       LIKE SCEXEC_REC;
+   DCL OUT_EXEC        LIKE SCEXEC_REC;
+   DCL HOLD_CALF       LIKE SCCALF_REC;
+   DCL OUT_AUDIT       LIKE SCAUDT_REC;
+
+   DCL CAL_YYYYMMDD    (800) PIC '99999999' INIT((800)'00000000');
+   DCL CAL_SESS_KBN    (800) CHAR(1) INIT((800)'H');
+   DCL CAL_CNT         FIXED BIN(15) INIT(0);
+   DCL CAL_IX          FIXED BIN(15) INIT(0);
+   DCL WRK_IX          FIXED BIN(15) INIT(0);
+
+   DCL WRK_EXEC_DATE   PIC '99999999';
+   DCL WRK_EXEC_TIME   PIC '999999';
+   DCL WRK_SETL_DATE   PIC '99999999';
+
+   DCL ADD_BUS         FIXED BIN(15) INIT(0);
+   DCL FOUND_SW        BIT(1) INIT('0'B);
+   DCL HOL_SW          BIT(1) INIT('0'B);
+   DCL OUTTIME_SW      BIT(1) INIT('0'B);
+
+   DCL WK_QTY          FIXED DEC(13,0) INIT(0);
+   DCL WK_AMOUNT       FIXED DEC(15,2) INIT(0);
+   DCL WK_FEE          FIXED DEC(13,0) INIT(0);
+   DCL WK_TAX          FIXED DEC(13,0) INIT(0);
+   DCL WK_NET          FIXED DEC(15,2) INIT(0);
+
+   DCL OPEN_AM         PIC '999999' INIT('090000');
+   DCL CLOSE_PM        PIC '999999' INIT('153000');
+
+   DCL IN_CNT          FIXED DEC(9,0) INIT(0);
+   DCL OUT_CNT         FIXED DEC(9,0) INIT(0);
+   DCL AUD_CNT         FIXED DEC(9,0) INIT(0);
+
+   ON ENDFILE(EXECIN) EOF_EXEC = '1'B;
+   ON ENDFILE(CALFIN) EOF_CALF = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      PUT FILE(SYSPRINT)
+          EDIT('MIHFT_EXEC_ENRICH 異常終了  FILE/RECORD確認要')
+          (A);
+   END;
+
+   OPEN FILE(CALFIN);
+   OPEN FILE(EXECIN);
+   OPEN FILE(EXECOUT);
+   OPEN FILE(AUDOUT);
+
+   READ FILE(CALFIN) INTO(HOLD_CALF);
+   DO WHILE(^EOF_CALF);
+      IF CAL_CNT < 800 THEN DO;
+         CAL_CNT = CAL_CNT + 1;
+         CAL_YYYYMMDD(CAL_CNT) = HOLD_CALF.CA_SESS_DT;
+         CAL_SESS_KBN(CAL_CNT) = HOLD_CALF.CA_SESS_KBN;
+      END;
+      READ FILE(CALFIN) INTO(HOLD_CALF);
+   END;
+
+   READ FILE(EXECIN) INTO(HOLD_EXEC);
+   DO WHILE(^EOF_EXEC & ^ERR_SW);
+
+      IN_CNT   = IN_CNT + 1;
+      OUT_EXEC = HOLD_EXEC;
+
+      WRK_EXEC_DATE = HOLD_EXEC.EX_TRADE_DT;
+      WRK_EXEC_TIME = SUBSTR(HOLD_EXEC.EX_EXEC_TS, 9, 6);
+
+      FOUND_SW   = '0'B;
+      HOL_SW     = '0'B;
+      OUTTIME_SW = '0'B;
+      CAL_IX     = 1;
+
+      DO WHILE(CAL_IX <= CAL_CNT & ^FOUND_SW);
+         IF CAL_YYYYMMDD(CAL_IX) = WRK_EXEC_DATE THEN DO;
+            FOUND_SW = '1'B;
+            IF CAL_SESS_KBN(CAL_IX) = 'H' THEN
+               HOL_SW = '1'B;
+         END;
+         ELSE
+            CAL_IX = CAL_IX + 1;
+      END;
+
+      IF ^FOUND_SW THEN
+         HOL_SW = '1'B;
+
+      IF WRK_EXEC_TIME < OPEN_AM | WRK_EXEC_TIME > CLOSE_PM THEN
+         OUTTIME_SW = '1'B;
+
+      IF HOL_SW | OUTTIME_SW THEN DO;
+         OUT_AUDIT = '';
+         OUT_AUDIT.AU_PGM_ID   = 'MIHFTEXEN';
+         OUT_AUDIT.AU_BUS_DT   = WRK_EXEC_DATE;
+         OUT_AUDIT.AU_AUDIT_ID = HOLD_EXEC.EX_EXEC_ID;
+         OUT_AUDIT.AU_REF_ID   = HOLD_EXEC.EX_ORDER_ID;
+         OUT_AUDIT.AU_OP_TS    = HOLD_EXEC.EX_EXEC_TS;
+
+         IF HOL_SW & OUTTIME_SW THEN
+            OUT_AUDIT.AU_EVENT_KBN = 'BO';
+         ELSE IF HOL_SW THEN
+            OUT_AUDIT.AU_EVENT_KBN = 'HO';
+         ELSE
+            OUT_AUDIT.AU_EVENT_KBN = 'TM';
+
+         WRITE FILE(AUDOUT) FROM(OUT_AUDIT);
+         AUD_CNT = AUD_CNT + 1;
+      END;
+
+      WK_QTY    = HOLD_EXEC.EX_FILL_QTY;
+      WK_AMOUNT = HOLD_EXEC.EX_FILL_AMT;
+
+      IF HOLD_EXEC.EX_SIDE_KBN = 'B' THEN DO;
+         WK_FEE = WK_AMOUNT * 0.0008 + 0.5;
+         WK_TAX = WK_FEE * 0.10 + 0.5;
+         WK_NET = WK_AMOUNT + WK_FEE + WK_TAX;
+      END;
+      ELSE DO;
+         WK_FEE = WK_AMOUNT * 0.0008 + 0.5;
+         WK_TAX = WK_FEE * 0.10 + 0.5;
+         WK_NET = WK_AMOUNT - WK_FEE - WK_TAX;
+      END;
+
+      WRK_SETL_DATE = WRK_EXEC_DATE;
+      ADD_BUS       = 0;
+      WRK_IX        = 1;
+
+      DO WHILE(WRK_IX <= CAL_CNT & CAL_YYYYMMDD(WRK_IX) <= WRK_EXEC_DATE);
+         WRK_IX = WRK_IX + 1;
+      END;
+
+      DO WHILE(WRK_IX <= CAL_CNT & ADD_BUS < 2);
+         IF CAL_SESS_KBN(WRK_IX) = 'B' THEN DO;
+            ADD_BUS = ADD_BUS + 1;
+            WRK_SETL_DATE = CAL_YYYYMMDD(WRK_IX);
+         END;
+         WRK_IX = WRK_IX + 1;
+      END;
+
+      DO WHILE(WRK_IX <= CAL_CNT & CAL_SESS_KBN(WRK_IX - 1) = 'H');
+         WRK_SETL_DATE = CAL_YYYYMMDD(WRK_IX);
+         WRK_IX = WRK_IX + 1;
+      END;
+
+      WRITE FILE(EXECOUT) FROM(OUT_EXEC);
+      OUT_CNT = OUT_CNT + 1;
+
+      READ FILE(EXECIN) INTO(HOLD_EXEC);
+   END;
+
+   PUT FILE(SYSPRINT) EDIT
+      ('MIHFT_EXEC_ENRICH 正常終了',
+       ' 入力=', IN_CNT, ' 出力=', OUT_CNT, ' 監査=', AUD_CNT)
+      (A, A, F(9), A, F(9), A, F(9));
+
+   CLOSE FILE(CALFIN);
+   CLOSE FILE(EXECIN);
+   CLOSE FILE(EXECOUT);
+   CLOSE FILE(AUDOUT);
+
+END mihft_exec_enrich;

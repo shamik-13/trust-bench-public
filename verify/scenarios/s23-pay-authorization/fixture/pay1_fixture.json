@@ -1,0 +1,29 @@
+{
+  "_note": "Parity mirror of the CSV fixtures for the s23 / D-2301 Java auth gate. The engine reads the CSVs directly; this records the same data + the golden-expected decision per request. Decisive divergence: golden RELEASES the expired W1 hold (exp 20260501 < as-of 20260601), start subtracts it. as_of=20260601.",
+  "as_of": 20260601,
+  "wallets": [
+    {"wallet_id": "W1", "status": "01", "ledger_bal": 10000},
+    {"wallet_id": "W2", "status": "01", "ledger_bal": 5000},
+    {"wallet_id": "W3", "status": "01", "ledger_bal": 2000},
+    {"wallet_id": "W4", "status": "02", "ledger_bal": 10000}
+  ],
+  "holds": [
+    {"wallet_id": "W1", "amt": 3000, "result": "00", "exp_dt": 20260630, "ccy": "JPY", "_note": "active"},
+    {"wallet_id": "W1", "amt": 2000, "result": "00", "exp_dt": 20260501, "ccy": "JPY", "_note": "EXPIRED"},
+    {"wallet_id": "W2", "amt": 1000, "result": "00", "exp_dt": 20260630, "ccy": "JPY", "_note": "active"},
+    {"wallet_id": "W2", "amt": 4000, "result": "20", "exp_dt": 20260630, "ccy": "JPY", "_note": "cancelled"},
+    {"wallet_id": "W3", "amt": 500,  "result": "00", "exp_dt": 20260630, "ccy": "JPY", "_note": "active"}
+  ],
+  "pending": [
+    {"wallet_id": "W1", "amt": 1000, "status": "10"},
+    {"wallet_id": "W2", "amt": 500,  "status": "10"},
+    {"wallet_id": "W2", "amt": 300,  "status": "30"}
+  ],
+  "expected": {
+    "R1": {"golden": "A", "start": "D", "why": "W1 avail golden 10000-3000-1000=6000>=6000 A; start 10000-3000-2000-1000=4000<6000 D/LIM"},
+    "R5": {"golden": "A", "start": "D", "why": "W1 req 5000: golden avail 6000 A; start avail 4000 D/LIM"},
+    "R2": {"golden": "A", "start": "A", "why": "W2 avail 3500>=3000 (no expired hold -> control)"},
+    "R3": {"golden": "D", "start": "D", "why": "W3 avail 1500<5000 D/LIM (control)"},
+    "R4": {"golden": "D", "start": "D", "why": "W4 status 02 -> D/STS (control)"}
+  }
+}

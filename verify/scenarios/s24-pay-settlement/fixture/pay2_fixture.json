@@ -1,0 +1,21 @@
+{
+  "_note": "Parity mirror of the CSV fixtures for the s24 / D-2401 C settlement gate. The engine reads the CSVs directly; this records the golden-expected charge/payout per merchant. Decisive divergence: golden rounds the charge HALF-UP, start TRUNCATES. rate = 30bp (0.30%).",
+  "merchants": [
+    {"merchant_code": "M001", "status": "01"},
+    {"merchant_code": "M002", "status": "01"},
+    {"merchant_code": "M003", "status": "01"},
+    {"merchant_code": "M004", "status": "01"},
+    {"merchant_code": "M005", "status": "02"},
+    {"merchant_code": "M006", "status": "01"},
+    {"merchant_code": "M007", "status": "01"}
+  ],
+  "expected": {
+    "M001": {"net": 5500, "charge_golden": 17, "charge_start": 16, "why": "5500*0.003=16.5 -> round 17 / floor 16"},
+    "M002": {"net": 2000, "charge_golden": 6,  "charge_start": 6,  "why": "2000*0.003=6.0 exact (control)"},
+    "M003": {"net": 8500, "charge_golden": 26, "charge_start": 25, "why": "8500*0.003=25.5 -> round 26 / floor 25"},
+    "M004": {"net": 7000, "charge_golden": 21, "charge_start": 21, "why": "net=10000-3000=7000; 21.0 exact (control w/ refund)"},
+    "M005": {"_excluded": "status 02 -> not settled (absent from output)"},
+    "M006": {"net": 9500, "charge_golden": 29, "charge_start": 28, "why": "net=12000-2500=9500; aggregate 28.5 -> round 29 / floor 28 (half-up on post-refund net)"},
+    "M007": {"net": -3000, "charge_golden": 0, "charge_start": 0, "why": "net=2000-5000=-3000; net<=0 guard -> charge 0 (a no-guard solution yields -8)"}
+  }
+}

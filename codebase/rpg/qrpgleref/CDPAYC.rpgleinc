@@ -1,0 +1,10 @@
+       // CDPAYC -- CDPAYF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdpayf_rec qualified;
+         py_payment_id      char(10);
+         py_card_no         char(16);
+         py_received_dt     packed(8:0);
+         py_pay_amt         packed(13:2);
+         py_pay_method      char(10);
+         py_alloc_status    char(2);
+         py_bank_ref_no     char(16);
+       end-ds;

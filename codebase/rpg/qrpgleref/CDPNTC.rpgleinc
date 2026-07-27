@@ -1,0 +1,8 @@
+       // CDPNTC -- CDPOINTF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdpointf_rec qualified;
+         pt_member_id       char(10);
+         pt_point_bal       packed(13:2);
+         pt_last_earn_dt    packed(8:0);
+         pt_last_redeem_dt  packed(8:0);
+         pt_point_status    char(2);
+       end-ds;

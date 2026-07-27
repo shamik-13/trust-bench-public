@@ -1,0 +1,322 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*    01.00  2018/04/02 村上 健司 (E-301)    初版                                  */
+/*    01.01  2019/10/15 村上 健司 (E-301)      DVP不一致判定追加                     */
+/*    01.02  2021/06/21 藤田 和也 (E-271)    既存FAILのAGE更新対応                 */
+/*    01.03  2023/02/06 今井 彩 (E-230)    SCAUDT出力項目見直し                  */
+/*--------------------------------------------------------------------*/
+/*  みらい証券 決済 フェイル登録                                      */
+/*--------------------------------------------------------------------*/
+
+mihft_fail_register: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCSETLC;
+   %INCLUDE SCDVPIC;
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCFAILC;
+   %INCLUDE SCAUDTC;
+
+   DCL SETLF    FILE RECORD INPUT;
+   DCL DVPF     FILE RECORD INPUT;
+   DCL POSF     FILE RECORD INPUT;
+   DCL FAILIN   FILE RECORD INPUT;
+   DCL FAILOUT  FILE RECORD OUTPUT;
+   DCL SCAUDT   FILE RECORD OUTPUT;
+   DCL SCCALF   FILE RECORD INPUT;
+
+   DCL 1 WK_SETL     LIKE SCSETL_REC;
+   DCL 1 WK_DVP      LIKE SCDVPI_REC;
+   DCL 1 WK_POS      LIKE SCPOSI_REC;
+   DCL 1 WK_FAIL     LIKE SCFAIL_REC;
+   DCL 1 OUT_FAIL    LIKE SCFAIL_REC;
+   DCL 1 WK_AUDT     LIKE SCAUDT_REC;
+
+   DCL 1 CAL_REC,
+         5 CAL_YMD         PIC '99999999',
+         5 SESS_KBN        CHAR(1),
+         5 CAL_FILLER      CHAR(71);
+
+   DCL EOF_SETL       BIT(1) INIT('0'B);
+   DCL EOF_DVP        BIT(1) INIT('0'B);
+   DCL EOF_POS        BIT(1) INIT('0'B);
+   DCL EOF_FAIL       BIT(1) INIT('0'B);
+   DCL EOF_CAL        BIT(1) INIT('0'B);
+   DCL ERR_SW         BIT(1) INIT('0'B);
+
+   DCL HOLD_QTY       FIXED DEC(15,0) INIT(0);
+   DCL NEED_QTY       FIXED DEC(15,0) INIT(0);
+   DCL DVP_QTY        FIXED DEC(15,0) INIT(0);
+   DCL SETL_AMT       FIXED DEC(17,2) INIT(0);
+   DCL DVP_AMT        FIXED DEC(17,2) INIT(0);
+   DCL DIFF_AMT       FIXED DEC(17,2) INIT(0);
+   DCL AGE_DAYS       FIXED DEC(5,0)  INIT(0);
+   DCL BUS_DAYS       FIXED DEC(3,0)  INIT(0);
+   DCL WK_DAYS        FIXED DEC(7,0)  INIT(0);
+
+   DCL SYS_YMD        PIC '99999999';
+   DCL BASE_YMD       PIC '99999999';
+   DCL DUE_YMD        PIC '99999999';
+   DCL WK_FROM_YMD    PIC '99999999';
+   DCL WK_DATE6       CHAR(6);
+   DCL REASON_KBN     CHAR(2);
+   DCL OLD_STATUS     CHAR(2);
+   DCL AUD_TEXT       CHAR(80);
+   DCL FOUND_FAIL     BIT(1);
+   DCL FOUND_DVP      BIT(1);
+   DCL POS_RC         FIXED BIN(31) INIT(0);
+
+   DCL DATE           BUILTIN;
+   DCL SUBSTR         BUILTIN;
+   DCL VERIFY         BUILTIN;
+   DCL ABS            BUILTIN;
+   DCL DECIMAL        BUILTIN;
+
+   ON ENDFILE(SETLF)   EOF_SETL = '1'B;
+   ON ENDFILE(DVPF)    EOF_DVP  = '1'B;
+   ON ENDFILE(POSF)    EOF_POS  = '1'B;
+   ON ENDFILE(FAILIN)  EOF_FAIL = '1'B;
+   ON ENDFILE(SCCALF)  EOF_CAL  = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      PUT SKIP LIST('MIHFT_FAIL_REGISTER 異常終了');
+      STOP;
+   END;
+
+   WK_DATE6 = DATE();
+   SYS_YMD  = '20' || WK_DATE6;
+
+   OPEN FILE(SETLF)   INPUT;
+   OPEN FILE(DVPF)    INPUT;
+   OPEN FILE(POSF)    INPUT;
+   OPEN FILE(FAILIN)  INPUT;
+   OPEN FILE(FAILOUT) OUTPUT;
+   OPEN FILE(SCAUDT)  OUTPUT;
+   OPEN FILE(SCCALF)  INPUT;
+
+   READ FILE(DVPF)   INTO(WK_DVP);
+   READ FILE(FAILIN) INTO(WK_FAIL);
+
+   READ FILE(SETLF) INTO(WK_SETL);
+   DO WHILE(^EOF_SETL);
+
+      REASON_KBN = '  ';
+      FOUND_FAIL = '0'B;
+      FOUND_DVP  = '0'B;
+      HOLD_QTY   = 0;
+      NEED_QTY   = 0;
+      DVP_QTY    = 0;
+      SETL_AMT   = 0;
+      DVP_AMT    = 0;
+      DIFF_AMT   = 0;
+      AGE_DAYS   = 0;
+      DUE_YMD    = 0;
+
+      IF VERIFY(WK_SETL.ST_SETL_ID, '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ') = 0
+         & WK_SETL.ST_STATUS_KBN ^= 'S'
+         & (WK_SETL.ST_SETL_KBN = 'DVP' | WK_SETL.ST_SETL_KBN = 'CASH') THEN
+      DO;
+
+         CALL CALC_T2_DUE(WK_SETL.ST_TRADE_DT, DUE_YMD);
+
+         IF DUE_YMD <= SYS_YMD THEN
+         DO;
+            SETL_AMT = WK_SETL.ST_SETL_AMT;
+
+            IF WK_SETL.ST_SETL_KBN = 'DVP' THEN
+            DO;
+               DO WHILE(^EOF_DVP
+                    & WK_DVP.DV_SETL_ID < WK_SETL.ST_SETL_ID);
+                  READ FILE(DVPF) INTO(WK_DVP);
+               END;
+
+               IF ^EOF_DVP
+                  & WK_DVP.DV_SETL_ID = WK_SETL.ST_SETL_ID THEN
+               DO;
+                  FOUND_DVP = '1'B;
+                  DVP_QTY = WK_DVP.DV_DELIVER_QTY;
+                  DVP_AMT = WK_DVP.DV_PAY_AMT;
+                  NEED_QTY = DVP_QTY;
+               END;
+
+               IF ^FOUND_DVP THEN
+                  REASON_KBN = '01';
+               ELSE
+               DO;
+                  DIFF_AMT = ABS(SETL_AMT - DVP_AMT);
+                  IF DIFF_AMT > 0.00 THEN
+                     REASON_KBN = '02';
+               END;
+            END;
+
+            IF REASON_KBN = '  ' THEN
+            DO;
+               CALL mihft_position_probe
+                    (WK_SETL.ST_CIF_NO,
+                     WK_SETL.ST_INSTR_CODE,
+                     WK_SETL.ST_SETL_DT,
+                     HOLD_QTY,
+                     POS_RC);
+
+               IF POS_RC ^= 0 THEN
+                  REASON_KBN = '09';
+               ELSE
+                  IF HOLD_QTY < NEED_QTY THEN
+                     REASON_KBN = '03';
+            END;
+
+            IF REASON_KBN ^= '  ' THEN
+            DO;
+               DO WHILE(^EOF_FAIL
+                    & WK_FAIL.FL_SETL_ID < WK_SETL.ST_SETL_ID);
+                  WRITE FILE(FAILOUT) FROM(WK_FAIL);
+                  READ FILE(FAILIN) INTO(WK_FAIL);
+               END;
+
+               IF ^EOF_FAIL
+                  & WK_FAIL.FL_SETL_ID = WK_SETL.ST_SETL_ID THEN
+               DO;
+                  FOUND_FAIL = '1'B;
+                  OUT_FAIL = WK_FAIL;
+                  WK_FROM_YMD = OUT_FAIL.FL_SETL_DT;
+                  AGE_DAYS = DAYS_BETWEEN(WK_FROM_YMD, SYS_YMD);
+                  OUT_FAIL.FL_AGE_DAYS = AGE_DAYS;
+                  WRITE FILE(FAILOUT) FROM(OUT_FAIL);
+
+                  OLD_STATUS = WK_SETL.ST_STATUS_KBN;
+                  AUD_TEXT = '既存FAIL AGE更新 SETL-ID=' || WK_SETL.ST_SETL_ID;
+                  CALL WRITE_AUDIT('U', OLD_STATUS, 'F', AUD_TEXT);
+
+                  READ FILE(FAILIN) INTO(WK_FAIL);
+               END;
+               ELSE
+               DO;
+                  OUT_FAIL.FL_FAIL_ID     = 'FL' || SUBSTR(WK_SETL.ST_SETL_ID, 1, 8);
+                  OUT_FAIL.FL_SETL_ID     = WK_SETL.ST_SETL_ID;
+                  OUT_FAIL.FL_CIF_NO      = WK_SETL.ST_CIF_NO;
+                  OUT_FAIL.FL_INSTR_CODE  = WK_SETL.ST_INSTR_CODE;
+                  OUT_FAIL.FL_SETL_DT     = WK_SETL.ST_SETL_DT;
+                  OUT_FAIL.FL_REASON_KBN  = REASON_KBN;
+                  OUT_FAIL.FL_AGE_DAYS    = '0';
+                  OUT_FAIL.FL_FAIL_QTY    = NEED_QTY;
+                  OUT_FAIL.FL_FAIL_AMT    = SETL_AMT;
+                  OUT_FAIL.FL_STATUS_KBN  = 'F';
+
+                  WRITE FILE(FAILOUT) FROM(OUT_FAIL);
+
+                  OLD_STATUS = WK_SETL.ST_STATUS_KBN;
+                  SELECT(REASON_KBN);
+                     WHEN('01') AUD_TEXT = '決済未了 SETL-ID=' || WK_SETL.ST_SETL_ID;
+                     WHEN('02') AUD_TEXT = 'DVP不一致 SETL-ID=' || WK_SETL.ST_SETL_ID;
+                     WHEN('03') AUD_TEXT = '残高不足 SETL-ID=' || WK_SETL.ST_SETL_ID;
+                     OTHERWISE  AUD_TEXT = '照会不能 SETL-ID=' || WK_SETL.ST_SETL_ID;
+                  END;
+
+                  CALL WRITE_AUDIT('I', OLD_STATUS, 'F', AUD_TEXT);
+               END;
+            END;
+         END;
+      END;
+
+      READ FILE(SETLF) INTO(WK_SETL);
+   END;
+
+   DO WHILE(^EOF_FAIL);
+      WRITE FILE(FAILOUT) FROM(WK_FAIL);
+      READ FILE(FAILIN) INTO(WK_FAIL);
+   END;
+
+   CLOSE FILE(SETLF);
+   CLOSE FILE(DVPF);
+   CLOSE FILE(POSF);
+   CLOSE FILE(FAILIN);
+   CLOSE FILE(FAILOUT);
+   CLOSE FILE(SCAUDT);
+   CLOSE FILE(SCCALF);
+
+   RETURN;
+
+CALC_T2_DUE: PROC(P_TRADE_YMD, P_DUE_YMD);
+   DCL P_TRADE_YMD PIC '99999999';
+   DCL P_DUE_YMD   PIC '99999999';
+   DCL WK_YMD      PIC '99999999';
+   DCL HIT_TRADE   BIT(1) INIT('0'B);
+   DCL CNT         FIXED DEC(3,0) INIT(0);
+
+   EOF_CAL = '0'B;
+   REWIND FILE(SCCALF);
+   READ FILE(SCCALF) INTO(CAL_REC);
+
+   DO WHILE(^EOF_CAL & CNT < 2);
+      WK_YMD = CAL_REC.CAL_YMD;
+
+      IF WK_YMD >= P_TRADE_YMD THEN
+      DO;
+         IF WK_YMD = P_TRADE_YMD THEN
+            HIT_TRADE = '1'B;
+         ELSE
+            IF HIT_TRADE & CAL_REC.SESS_KBN = 'B' THEN
+            DO;
+               CNT = CNT + 1;
+               P_DUE_YMD = WK_YMD;
+            END;
+      END;
+
+      IF CNT < 2 THEN
+         READ FILE(SCCALF) INTO(CAL_REC);
+   END;
+
+   DO WHILE(^EOF_CAL & CAL_REC.SESS_KBN = 'H');
+      READ FILE(SCCALF) INTO(CAL_REC);
+      IF ^EOF_CAL THEN
+         P_DUE_YMD = CAL_REC.CAL_YMD;
+   END;
+
+END CALC_T2_DUE;
+
+DAYS_BETWEEN: PROC(P_FROM, P_TO) RETURNS(FIXED DEC(5,0));
+   DCL P_FROM PIC '99999999';
+   DCL P_TO   PIC '99999999';
+   DCL CNT    FIXED DEC(5,0) INIT(0);
+   DCL SEEN   BIT(1) INIT('0'B);
+
+   EOF_CAL = '0'B;
+   REWIND FILE(SCCALF);
+   READ FILE(SCCALF) INTO(CAL_REC);
+
+   DO WHILE(^EOF_CAL);
+      IF CAL_REC.CAL_YMD >= P_FROM THEN
+         SEEN = '1'B;
+
+      IF SEEN & CAL_REC.CAL_YMD <= P_TO THEN
+         CNT = CNT + 1;
+
+      IF CAL_REC.CAL_YMD < P_TO THEN
+         READ FILE(SCCALF) INTO(CAL_REC);
+      ELSE
+         EOF_CAL = '1'B;
+   END;
+
+   RETURN(CNT);
+END DAYS_BETWEEN;
+
+WRITE_AUDIT: PROC(P_ACT, P_OLD, P_NEW, P_TEXT);
+   DCL P_ACT  CHAR(1);
+   DCL P_OLD  CHAR(2);
+   DCL P_NEW  CHAR(1);
+   DCL P_TEXT CHAR(80);
+
+   WK_AUDT.AU_AUDIT_ID      = WK_SETL.ST_SETL_ID;
+   WK_AUDT.AU_PGM_ID        = 'MIHFTFAIL';
+   WK_AUDT.AU_BUS_DT        = SYS_YMD;
+   WK_AUDT.AU_REF_ID        = WK_SETL.ST_SETL_ID;
+   WK_AUDT.AU_EVENT_KBN     = P_ACT || ' ';
+   WK_AUDT.AU_BEFORE_STATUS = P_OLD;
+   WK_AUDT.AU_AFTER_STATUS  = P_NEW || ' ';
+   WK_AUDT.AU_OP_TS         = SYS_YMD || '000000';
+
+   WRITE FILE(SCAUDT) FROM(WK_AUDT);
+END WRITE_AUDIT;
+
+END mihft_fail_register;

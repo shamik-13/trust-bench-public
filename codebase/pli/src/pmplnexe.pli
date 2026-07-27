@@ -1,0 +1,196 @@
+pmplnexe: PROC OPTIONS(MAIN);
+
+/* ================================================================ */
+/* 変更履歴                                                         */
+/* ================================================================ */
+/* Ver   Date       User      Description                           */
+/* 001   2024-01-15  K.Yamada  契約貸付実行バッチ 新規作成          */
+/* 002   2024-03-22  S.Tanaka  解約返戻率テーブルロジック修正       */
+/* 003   2024-05-10  M.Sato    既存残高チェック集約上限対応         */
+/* ================================================================ */
+
+   DECLARE 1 LFCON_REC,
+           2 LFCON_KEY           PIC '9(10)',
+           2 LFCON_FACE_AMT      FIXED DECIMAL(13,2),
+           2 LFCON_POL_YEAR      PIC '9(4)',
+           2 LFCON_STATUS_KBN    PIC '99',
+           2 LFCON_ISSUE_DT      PIC '9(8)',
+           2 FILLER              CHARACTER(50);
+
+   DECLARE 1 LFPLN_REC,
+           2 LFPLN_KEY           PIC '9(10)',
+           2 LFPLN_PRINCIPAL_AMT FIXED DECIMAL(13,2),
+           2 LFPLN_START_DT      PIC '9(8)',
+           2 LFPLN_INT_RATE      FIXED DECIMAL(3,4),
+           2 FILLER              CHARACTER(50);
+
+   DECLARE 1 LFAUDL_REC,
+           2 LFAUD_KEY           PIC '9(10)',
+           2 LFAUD_TXN_DT        PIC '9(8)',
+           2 LFAUD_TXN_TYPE      CHARACTER(2),
+           2 LFAUD_AMOUNT        FIXED DECIMAL(13,2),
+           2 LFAUD_STATUS        CHARACTER(1),
+           2 LFAUD_ERR_MSG       CHARACTER(40);
+
+   DECLARE FILE(LFCON) RECORD SEQUENTIAL INPUT;
+   DECLARE FILE(LFPLN) RECORD SEQUENTIAL KEYED UPDATE;
+   DECLARE FILE(LFAUDL) RECORD SEQUENTIAL OUTPUT;
+
+   DECLARE 1 SURRENDER_RATE_TBL(5),
+           2 RATE_YEAR           PIC '9(4)',
+           2 RATE_VALUE          FIXED DECIMAL(1,4);
+
+   DECLARE WS_EOF_LFCON          BIT(1) INITIAL('0'B);
+   DECLARE WS_COUNT_OK           PIC '9(8)' INITIAL(0);
+   DECLARE WS_COUNT_ERR          PIC '9(8)' INITIAL(0);
+   DECLARE WS_MAX_LOAN           FIXED DECIMAL(13,2);
+   DECLARE WS_SURRENDER_VALUE    FIXED DECIMAL(13,2);
+   DECLARE WS_SURRENDER_RATE     FIXED DECIMAL(1,4);
+   DECLARE WS_CURRENT_BAL        FIXED DECIMAL(13,2);
+   DECLARE WS_AGGREGATE_BAL      FIXED DECIMAL(13,2);
+   DECLARE WS_TODAY              PIC '9(8)' INITIAL(20240620);
+   DECLARE WS_INT_RATE_FIXED     FIXED DECIMAL(3,4) INITIAL(0.0300);
+   DECLARE WS_LOOP_IDX           BINARY FIXED(31);
+   DECLARE WS_RATE_FOUND         BIT(1);
+   DECLARE WS_POL_YEAR_NUM       PIC '9(4)';
+
+   %INCLUDE LFCONFC;
+   %INCLUDE LFPLNFC;
+   %INCLUDE LFAUDLC;
+
+   /* 解約返戻率テーブル初期化 */
+   SURRENDER_RATE_TBL(1).RATE_YEAR = 1;
+   SURRENDER_RATE_TBL(1).RATE_VALUE = 0.7000;
+   SURRENDER_RATE_TBL(2).RATE_YEAR = 2;
+   SURRENDER_RATE_TBL(2).RATE_VALUE = 0.7200;
+   SURRENDER_RATE_TBL(3).RATE_YEAR = 3;
+   SURRENDER_RATE_TBL(3).RATE_VALUE = 0.7500;
+   SURRENDER_RATE_TBL(4).RATE_YEAR = 4;
+   SURRENDER_RATE_TBL(4).RATE_VALUE = 0.7800;
+   SURRENDER_RATE_TBL(5).RATE_YEAR = 5;
+   SURRENDER_RATE_TBL(5).RATE_VALUE = 0.8000;
+
+   ON ENDFILE(LFCON)
+      WS_EOF_LFCON = '1'B;
+
+   ON UNDEFINEDFILE
+      DO;
+         DISPLAY('*** ファイルオープンエラー');
+         GOTO ERROR_ABORT;
+      END;
+
+   ON ERROR(LFCON)
+      DO;
+         DISPLAY('*** LFCON読み込みエラー');
+         GOTO ERROR_ABORT;
+      END;
+
+   OPEN FILE(LFCON);
+   OPEN FILE(LFPLN);
+   OPEN FILE(LFAUDL);
+
+   /* ================================================================ */
+   /* メイン処理ループ                                               */
+   /* ================================================================ */
+
+   DO WHILE(WS_EOF_LFCON = '0'B);
+
+      READ FILE(LFCON) INTO(LFCON_REC);
+
+      IF WS_EOF_LFCON = '1'B
+      THEN LEAVE;
+
+      /* ステップ1: 契約状態判定 (01=有効 のみ対象) */
+      IF LFCON_STATUS_KBN ^= '01'
+      THEN DO;
+         LFAUD_STATUS = '9';
+         LFAUD_ERR_MSG = '契約状態が有効でない';
+         GOTO AUDIT_WRITE;
+      END;
+
+      /* ステップ2: 解約返戻率テーブル検索 */
+      WS_SURRENDER_RATE = 0.7000;  /* デフォルト */
+      WS_RATE_FOUND = '0'B;
+      WS_POL_YEAR_NUM = LFCON_POL_YEAR;
+
+      DO WS_LOOP_IDX = 1 TO 5;
+         IF SURRENDER_RATE_TBL(WS_LOOP_IDX).RATE_YEAR = WS_POL_YEAR_NUM
+         THEN DO;
+            WS_SURRENDER_RATE = SURRENDER_RATE_TBL(WS_LOOP_IDX).RATE_VALUE;
+            WS_RATE_FOUND = '1'B;
+            LEAVE;
+         END;
+      END;
+
+      IF WS_RATE_FOUND = '0'B
+      THEN
+         WS_SURRENDER_RATE = 0.7000;
+
+      /* ステップ3: 理論上解約返戻価額計算 */
+      WS_SURRENDER_VALUE = LFCON_FACE_AMT * WS_SURRENDER_RATE;
+
+      /* ステップ4: 最大貸付額計算 (理論返戻価額の70%) */
+      WS_MAX_LOAN = WS_SURRENDER_VALUE * 0.70;
+
+      /* ステップ5: 既存残高チェック */
+      LFPLN_KEY = LFCON_KEY;
+      WS_CURRENT_BAL = 0;
+
+      FIND FILE(LFPLN) KEY(LFPLN_REC);
+      IF RECORD FOUND
+      THEN DO;
+         READ FILE(LFPLN) INTO(LFPLN_REC);
+         WS_CURRENT_BAL = LFPLN_PRINCIPAL_AMT;
+      END;
+
+      WS_AGGREGATE_BAL = WS_CURRENT_BAL + WS_MAX_LOAN;
+
+      IF WS_AGGREGATE_BAL > WS_SURRENDER_VALUE
+      THEN DO;
+         LFAUD_STATUS = 'E';
+         LFAUD_ERR_MSG = '貸付上限超過';
+         GOTO AUDIT_WRITE;
+      END;
+
+      /* ステップ6: LFPLNF更新 */
+      LFPLN_KEY = LFCON_KEY;
+      LFPLN_PRINCIPAL_AMT = WS_MAX_LOAN;
+      LFPLN_START_DT = WS_TODAY;
+      LFPLN_INT_RATE = WS_INT_RATE_FIXED;
+
+      REWRITE FILE(LFPLN) FROM(LFPLN_REC);
+
+      LFAUD_STATUS = '0';
+      LFAUD_ERR_MSG = '';
+      WS_COUNT_OK = WS_COUNT_OK + 1;
+
+AUDIT_WRITE:
+
+      /* ステップ7: 監査ログ出力 */
+      LFAUD_KEY = LFCON_KEY;
+      LFAUD_TXN_DT = WS_TODAY;
+      LFAUD_TXN_TYPE = 'PL';
+      LFAUD_AMOUNT = WS_MAX_LOAN;
+
+      IF LFAUD_STATUS ^= '0'
+      THEN
+         WS_COUNT_ERR = WS_COUNT_ERR + 1;
+
+      WRITE FILE(LFAUDL) FROM(LFAUDL_REC);
+
+   END;  /* DO WHILE */
+
+   CLOSE FILE(LFCON);
+   CLOSE FILE(LFPLN);
+   CLOSE FILE(LFAUDL);
+
+   DISPLAY('契約貸付実行 処理完了');
+   DISPLAY('  成功件数: ' || WS_COUNT_OK);
+   DISPLAY('  エラー件数: ' || WS_COUNT_ERR);
+   RETURN;
+
+ERROR_ABORT:
+   DISPLAY('*** 処理異常終了');
+   RETURN;
+
+END pmplnexe;

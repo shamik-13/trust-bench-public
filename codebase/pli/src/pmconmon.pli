@@ -1,0 +1,477 @@
+         /*----------------------------------------------------------------------*/
+         /* 契約保全統合処理バッチ (PMCONMON)                                    */
+         /* 版数  年月日      担当        概要                                    */
+         /* 1.00  2019/04/15 田中 S      新規作成 - 契約保全ライフサイクル管理   */
+         /* 1.10  2020/08/22 佐藤 M      復活処理ロジック追加                    */
+         /* 1.20  2021/11/10 田中 S      グループ払込配分機能追加                */
+         /* 2.00  2023/01/20 鈴木 K      チェックポイント再開機構導入            */
+         /* 2.10  2024/06/15 佐藤 M      監査ログ出力統合                        */
+         /*----------------------------------------------------------------------*/
+         /*                                                                       */
+         /* 目的:                                                                */
+         /*   月末マスタコントローラ: LFCONF を CON-NO 順に読込み, マルチフェー */
+         /*   ズループで以下の各サブプロセスを駆動し, 契約保全・収納ライフサイ  */
+         /*   クルの全フェーズを統合管理する.                                    */
+         /*   - 保険料再計算(pmrecalc): 特約変更契約対象                         */
+         /*   - 失効検証(pmlapchk): 上流の失効判定結果の妥当性確認               */
+         /*   - 復活申請(pmreinexe): 承認待ち復活申請の実行                      */
+         /*   - 次月請求生成(pmbilgen): 次月分保険料請求の作成                  */
+         /*   - 解約実行(pmsurrexe): 管理者承認済み解約の最終実行                */
+         /*   - 配当支払(pmdivpay): 事業年度マッチ時の年間配当振出              */
+         /*   - 決算年度報告書生成(pmstmgen): 年度末トリガ                       */
+         /*   - グループ払込配分(pmgrpay): グループ払込ポーリングと配分          */
+         /*   - 最終照合(pmrecon): マスタ整合性チェック                          */
+         /*   - 監査ログ生成(pmaudgen): 最終監査スイープ                        */
+         /*                                                                       */
+         /* チェックポイント・リスタート機構:                                    */
+         /*   LFCKPTF ファイルを CON-NO キー管理し, 処理済み契約の再処理を     */
+         /*   禁止する. 異常終了後の中断再開を実現.                              */
+         /*                                                                       */
+         /*----------------------------------------------------------------------*/
+
+pmconmon: PROC OPTIONS(MAIN);
+
+%INCLUDE 'LFCONFC';
+%INCLUDE 'LFLAPFC';
+%INCLUDE 'LFBILFC';
+%INCLUDE 'LFPAYF2C';
+%INCLUDE 'LFSURFC';
+%INCLUDE 'LFBNCFC';
+%INCLUDE 'LFPLNFC';
+%INCLUDE 'LFDIVF2C';
+%INCLUDE 'LFCMNHC';
+%INCLUDE 'LFADRHC';
+%INCLUDE 'LFSTMFC';
+%INCLUDE 'LFAUDLC';
+
+         /*---------- ファイル宣言 ----------*/
+DCL  LFCONF    FILE SEQUENTIAL ENVIRONMENT(F(80));
+DCL  LFCKPTF   FILE SEQUENTIAL KEYED ENVIRONMENT(F(100));
+DCL  LFRPTF    PRINT;
+
+         /*---------- 働き変数 ----------*/
+DCL  WK_EOJ_FLG          CHAR(1)        INIT('N');
+DCL  WK_CKPT_EOJ_FLG     CHAR(1)        INIT('N');
+DCL  WK_REIN_EOJ_FLG     CHAR(1)        INIT('N');
+DCL  WK_BIL_EOJ_FLG      CHAR(1)        INIT('N');
+DCL  WK_SURR_EOJ_FLG     CHAR(1)        INIT('N');
+DCL  WK_DIV_EOJ_FLG      CHAR(1)        INIT('N');
+DCL  WK_STM_EOJ_FLG      CHAR(1)        INIT('N');
+DCL  WK_GRPAY_EOJ_FLG    CHAR(1)        INIT('N');
+DCL  WK_RECON_EOJ_FLG    CHAR(1)        INIT('N');
+DCL  WK_ERR_FLG          CHAR(1)        INIT('N');
+
+DCL  WK_CON_NO           CHAR(10);
+DCL  WK_CON_STATUS_KBN   CHAR(2);
+DCL  WK_PAY_MODE_KBN     CHAR(1);
+DCL  WK_PAID_KBN         CHAR(1);
+DCL  WK_PREV_CON_NO      CHAR(10)       INIT('');
+DCL  WK_CKPT_CON_NO      CHAR(10)       INIT('');
+
+         /* 統計カウンタ */
+DCL  WK_TOTAL_READ       FIXED DEC(9)   INIT(0);
+DCL  WK_SKIP_COUNT       FIXED DEC(9)   INIT(0);
+DCL  WK_RECALC_COUNT     FIXED DEC(9)   INIT(0);
+DCL  WK_LAPCHK_COUNT     FIXED DEC(9)   INIT(0);
+DCL  WK_LAPCHK_ERR       FIXED DEC(9)   INIT(0);
+DCL  WK_REIN_COUNT       FIXED DEC(9)   INIT(0);
+DCL  WK_REIN_ERR         FIXED DEC(9)   INIT(0);
+DCL  WK_BIL_COUNT        FIXED DEC(9)   INIT(0);
+DCL  WK_BIL_ERR          FIXED DEC(9)   INIT(0);
+DCL  WK_SURR_COUNT       FIXED DEC(9)   INIT(0);
+DCL  WK_SURR_ERR         FIXED DEC(9)   INIT(0);
+DCL  WK_DIV_COUNT        FIXED DEC(9)   INIT(0);
+DCL  WK_DIV_AMT          FIXED DEC(13,2) INIT(0);
+DCL  WK_STM_COUNT        FIXED DEC(9)   INIT(0);
+DCL  WK_GRPAY_COUNT      FIXED DEC(9)   INIT(0);
+DCL  WK_GRPAY_ERR        FIXED DEC(9)   INIT(0);
+DCL  WK_RECON_ERR        FIXED DEC(9)   INIT(0);
+
+         /* 月末日付・年度判定 */
+DCL  WK_CURRENT_DATE     CHAR(8);
+DCL  WK_CURRENT_YEAR     CHAR(4);
+DCL  WK_CURRENT_MONTH    CHAR(2);
+DCL  WK_CURRENT_FYEAR    CHAR(4);
+DCL  WK_MONTH_LAST_DAY   FIXED DEC(2);
+DCL  WK_DIV_YR_MATCH     CHAR(1);
+
+         /* サブプロセス戻り値 */
+DCL  RC_LAPCHK           FIXED DEC(4);
+DCL  RC_REIN             FIXED DEC(4);
+DCL  RC_BIL              FIXED DEC(4);
+DCL  RC_SURR             FIXED DEC(4);
+DCL  RC_DIV              FIXED DEC(4);
+DCL  RC_STM              FIXED DEC(4);
+DCL  RC_GRPAY            FIXED DEC(4);
+DCL  RC_RECON            FIXED DEC(4);
+DCL  RC_AUD              FIXED DEC(4);
+
+         /* 請求/配当金額 */
+DCL  WK_BIL_AMT          FIXED DEC(13,2) INIT(0);
+DCL  WK_SURR_AMT         FIXED DEC(13,2) INIT(0);
+DCL  WK_TOTAL_BIL        FIXED DEC(13,2) INIT(0);
+DCL  WK_TOTAL_SURR       FIXED DEC(13,2) INIT(0);
+
+         /* レポート用 */
+DCL  WK_RPT_LINE         CHAR(132);
+DCL  WK_RPT_PAGE_NO      FIXED DEC(5)   INIT(1);
+DCL  WK_RPT_LINE_NO      FIXED DEC(3)   INIT(0);
+
+         /*---------- ファイル EOF ハンドラ ----------*/
+ON ENDFILE(LFCONF)
+   WK_EOJ_FLG = 'Y';
+
+ON ENDFILE(LFCKPTF)
+   WK_CKPT_EOJ_FLG = 'Y';
+
+ON ERROR(LFCONF)
+DO;
+   WK_ERR_FLG = 'Y';
+   PUT SKIP LIST('エラー: LFCONF ファイル読込失敗 CON-NO=' WK_CON_NO);
+   SIGNAL CONDITION(ERROR);
+END;
+
+         /*---------- 実行開始 ----------*/
+   CALL GET_SYSTEM_DATE;
+   CALL LOAD_CHECKPOINT;
+
+   OPEN FILE(LFCONF)    INPUT;
+   OPEN FILE(LFCKPTF)   UPDATE;
+   OPEN FILE(LFRPTF)    OUTPUT;
+
+         /*---------- メインループ: LFCONF 契約順読込 ----------*/
+   DO WHILE (WK_EOJ_FLG = 'N' & WK_ERR_FLG = 'N');
+      READ FILE(LFCONF) INTO(IN_LFCONF_REC);
+
+      WK_CON_NO = CN_NO;
+      WK_TOTAL_READ = WK_TOTAL_READ + 1;
+
+         /* チェックポイント・スキップ判定 */
+      IF WK_CKPT_CON_NO >= WK_CON_NO THEN
+      DO;
+         WK_SKIP_COUNT = WK_SKIP_COUNT + 1;
+         ITERATE;
+      END;
+
+         /* 契約状態フィルタ: 有効・払込猶予中・失効・復活のみ処理 */
+      WK_CON_STATUS_KBN = CN_STATUS_KBN;
+      IF WK_CON_STATUS_KBN NOT IN('01','03','05','07') THEN
+      DO;
+         ITERATE;
+      END;
+
+      WK_PAY_MODE_KBN = CN_PAY_MODE_KBN;
+      WK_PAID_KBN = CN_PAID_KBN;
+
+         /*---------- PHASE1: 失効検証 (pmlapchk) ----------*/
+      IF CN_LAPSE_NOTIFIED = 'Y' THEN
+      DO;
+         WK_LAPCHK_COUNT = WK_LAPCHK_COUNT + 1;
+         CALL pmlapchk(
+            WK_CON_NO,
+            CN_LAPSE_DATE,
+            CN_LAPSE_REASON_KBN,
+            RC_LAPCHK
+         );
+         IF RC_LAPCHK ^= 0 THEN
+            WK_LAPCHK_ERR = WK_LAPCHK_ERR + 1;
+      END;
+
+         /*---------- PHASE2: 保険料再計算 (pmrecalc) ----------*/
+      IF CN_RIDER_CHANGED_FLG = 'Y' THEN
+      DO;
+         WK_RECALC_COUNT = WK_RECALC_COUNT + 1;
+         CALL pmrecalc(
+            WK_CON_NO,
+            CN_RIDER_CHANGE_DATE,
+            WK_BIL_AMT
+         );
+      END;
+
+         /*---------- PHASE3: 復活処理 (pmreinexe) ----------*/
+      IF WK_CON_STATUS_KBN = '05' & CN_REIN_PENDING_FLG = 'Y' THEN
+      DO;
+         WK_REIN_COUNT = WK_REIN_COUNT + 1;
+         CALL pmreinexe(
+            WK_CON_NO,
+            CN_REIN_APPL_DATE,
+            CN_REIN_PREMIUM_DATE,
+            RC_REIN
+         );
+         IF RC_REIN ^= 0 THEN
+            WK_REIN_ERR = WK_REIN_ERR + 1;
+         ELSE
+            WK_CON_STATUS_KBN = '07';
+      END;
+
+         /*---------- PHASE4: 次月請求生成 (pmbilgen) ----------*/
+      IF WK_CON_STATUS_KBN IN('01','03','07') THEN
+      DO;
+         WK_BIL_COUNT = WK_BIL_COUNT + 1;
+         CALL pmbilgen(
+            WK_CON_NO,
+            WK_CURRENT_MONTH,
+            WK_CURRENT_FYEAR,
+            CN_NEXT_PAY_DATE,
+            WK_BIL_AMT,
+            RC_BIL
+         );
+         IF RC_BIL = 0 THEN
+         DO;
+            WK_TOTAL_BIL = WK_TOTAL_BIL + WK_BIL_AMT;
+         END;
+         ELSE
+            WK_BIL_ERR = WK_BIL_ERR + 1;
+      END;
+
+         /*---------- PHASE5: 解約実行 (pmsurrexe) ----------*/
+      IF CN_SURR_APPROVED_FLG = 'Y' THEN
+      DO;
+         WK_SURR_COUNT = WK_SURR_COUNT + 1;
+         CALL pmsurrexe(
+            WK_CON_NO,
+            CN_SURR_APPL_DATE,
+            CN_SURR_VALUE_AMT,
+            WK_SURR_AMT,
+            RC_SURR
+         );
+         IF RC_SURR = 0 THEN
+         DO;
+            WK_TOTAL_SURR = WK_TOTAL_SURR + WK_SURR_AMT;
+         END;
+         ELSE
+            WK_SURR_ERR = WK_SURR_ERR + 1;
+      END;
+
+         /*---------- PHASE6: 配当支払 (pmdivpay) ----------*/
+      IF WK_DIV_YR_MATCH = 'Y' & CN_DIV_ELIGIBLE_FLG = 'Y' THEN
+      DO;
+         WK_DIV_COUNT = WK_DIV_COUNT + 1;
+         CALL pmdivpay(
+            WK_CON_NO,
+            WK_CURRENT_FYEAR,
+            CN_POL_YEARS,
+            WK_DIV_AMT,
+            RC_DIV
+         );
+         IF RC_DIV = 0 THEN
+         DO;
+            WK_DIV_AMT = WK_DIV_AMT;
+         END;
+      END;
+
+         /*---------- PHASE7: 決算年度報告書生成 (pmstmgen) ----------*/
+      IF WK_CURRENT_MONTH = '03' THEN
+      DO;
+         WK_STM_COUNT = WK_STM_COUNT + 1;
+         CALL pmstmgen(
+            WK_CON_NO,
+            WK_CURRENT_FYEAR,
+            CN_CUST_NO,
+            RC_STM
+         );
+      END;
+
+         /*---------- PHASE8: グループ払込配分 (pmgrpay) ----------*/
+      IF CN_GRP_PAYMENT_FLAG = 'Y' THEN
+      DO;
+         WK_GRPAY_COUNT = WK_GRPAY_COUNT + 1;
+         CALL pmgrpay(
+            WK_CON_NO,
+            CN_GRP_ID,
+            CN_MEMBER_SEQ,
+            RC_GRPAY
+         );
+         IF RC_GRPAY ^= 0 THEN
+            WK_GRPAY_ERR = WK_GRPAY_ERR + 1;
+      END;
+
+         /*---------- チェックポイント更新 ----------*/
+      CALL UPDATE_CHECKPOINT(WK_CON_NO);
+
+   END;
+
+   /* PHASE9: 最終照合・監査スイープ */
+   IF WK_ERR_FLG = 'N' THEN
+   DO;
+      CALL pmrecon(WK_CURRENT_DATE, RC_RECON);
+      IF RC_RECON ^= 0 THEN
+         WK_RECON_ERR = WK_RECON_ERR + 1;
+
+      CALL pmaudgen(WK_CURRENT_DATE, RC_AUD);
+   END;
+
+         /*---------- ファイル終了処理 ----------*/
+   CLOSE FILE(LFCONF);
+   CLOSE FILE(LFCKPTF);
+
+         /*---------- レポート出力 ----------*/
+   CALL PRINT_SUMMARY_REPORT;
+
+         /*---------- 異常終了チェック ----------*/
+   IF WK_ERR_FLG = 'Y' | WK_RECON_ERR > 0 THEN
+      CALL EXIT(12);
+   ELSE
+      CALL EXIT(0);
+
+         /*---------- サブルーチン: システム日付取得 ----------*/
+GET_SYSTEM_DATE:
+   PROC;
+      GET SYSTEM(WK_CURRENT_DATE);
+      WK_CURRENT_YEAR  = SUBSTR(WK_CURRENT_DATE, 1, 4);
+      WK_CURRENT_MONTH = SUBSTR(WK_CURRENT_DATE, 5, 2);
+
+         /* 事業年度算出(日本: 4月〜翌3月) */
+      IF WK_CURRENT_MONTH >= '04' THEN
+         WK_CURRENT_FYEAR = WK_CURRENT_YEAR;
+      ELSE
+         WK_CURRENT_FYEAR = WK_CURRENT_YEAR - 1;
+
+         /* 配当年度マッチ判定 */
+      IF WK_CURRENT_MONTH = '03' THEN
+         WK_DIV_YR_MATCH = 'Y';
+      ELSE
+         WK_DIV_YR_MATCH = 'N';
+
+         /* 月末日付判定 */
+      SELECT(WK_CURRENT_MONTH);
+         WHEN('01','03','05','07','08','10','12')
+            WK_MONTH_LAST_DAY = 31;
+         WHEN('04','06','09','11')
+            WK_MONTH_LAST_DAY = 30;
+         WHEN('02')
+         DO;
+            IF MOD(WK_CURRENT_YEAR, 4) = 0 &
+               (MOD(WK_CURRENT_YEAR, 100) ^= 0 |
+                MOD(WK_CURRENT_YEAR, 400) = 0) THEN
+               WK_MONTH_LAST_DAY = 29;
+            ELSE
+               WK_MONTH_LAST_DAY = 28;
+         END;
+      END;
+   END GET_SYSTEM_DATE;
+
+         /*---------- サブルーチン: チェックポイント読込 ----------*/
+LOAD_CHECKPOINT:
+   PROC;
+      OPEN FILE(LFCKPTF) INPUT;
+      READ FILE(LFCKPTF) INTO(WK_CKPT_CON_NO);
+      WK_CKPT_EOJ_FLG = 'N';
+      CLOSE FILE(LFCKPTF);
+   END LOAD_CHECKPOINT;
+
+         /*---------- サブルーチン: チェックポイント更新 ----------*/
+UPDATE_CHECKPOINT:
+   PROC(P_CON_NO);
+      DCL  P_CON_NO      CHAR(10);
+      WRITE FILE(LFCKPTF) FROM(P_CON_NO);
+   END UPDATE_CHECKPOINT;
+
+         /*---------- サブルーチン: 月末サマリレポート出力 ----------*/
+PRINT_SUMMARY_REPORT:
+   PROC;
+      DCL  L_LOOP        FIXED DEC(3);
+      DCL  L_TOTAL_EXCEPTIONS FIXED DEC(9);
+
+      PUT FILE(LFRPTF) SKIP(3) LIST(
+         '契約保全統合処理バッチ(PMCONMON) 月末処理結果報告書'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         'レポート日付: ' WK_CURRENT_DATE);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '処理年月:     ' WK_CURRENT_YEAR '年' WK_CURRENT_MONTH '月');
+      PUT FILE(LFRPTF) SKIP(2) LIST(
+         '================ 処理統計 ================'
+      );
+
+      PUT FILE(LFRPTF) SKIP LIST(
+         '総読込件数(LFCONF):          ' WK_TOTAL_READ);
+      PUT FILE(LFRPTF) SKIP LIST(
+         'チェックポイント・スキップ: ' WK_SKIP_COUNT);
+
+      PUT FILE(LFRPTF) SKIP(2) LIST(
+         '【PHASE1: 失効検証(pmlapchk)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  処理対象件数:    ' WK_LAPCHK_COUNT);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  エラー件数:      ' WK_LAPCHK_ERR);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE2: 保険料再計算(pmrecalc)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  特約変更処理件数: ' WK_RECALC_COUNT);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE3: 復活処理(pmreinexe)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  処理対象件数:    ' WK_REIN_COUNT);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  エラー件数:      ' WK_REIN_ERR);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE4: 次月請求生成(pmbilgen)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  請求生成件数:    ' WK_BIL_COUNT);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  エラー件数:      ' WK_BIL_ERR);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  総請求金額:      ¥' WK_TOTAL_BIL);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE5: 解約実行(pmsurrexe)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  解約実行件数:    ' WK_SURR_COUNT);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  エラー件数:      ' WK_SURR_ERR);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  総解約返戻金:    ¥' WK_TOTAL_SURR);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE6: 配当支払(pmdivpay)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  配当支払件数:    ' WK_DIV_COUNT);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  総配当金額:      ¥' WK_DIV_AMT);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE7: 決算年度報告書生成(pmstmgen)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  報告書生成件数:  ' WK_STM_COUNT);
+
+      PUT FILE(LFRPTF) SKIP(1) LIST(
+         '【PHASE8: グループ払込配分(pmgrpay)】'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  グループ配分件数: ' WK_GRPAY_COUNT);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '  エラー件数:      ' WK_GRPAY_ERR);
+
+      L_TOTAL_EXCEPTIONS = WK_LAPCHK_ERR + WK_REIN_ERR + WK_BIL_ERR +
+                           WK_SURR_ERR + WK_GRPAY_ERR + WK_RECON_ERR;
+
+      PUT FILE(LFRPTF) SKIP(2) LIST(
+         '================ 最終処理結果 ================'
+      );
+      PUT FILE(LFRPTF) SKIP LIST(
+         '全エラー・例外件数: ' L_TOTAL_EXCEPTIONS);
+      PUT FILE(LFRPTF) SKIP LIST(
+         '最終照合エラー:     ' WK_RECON_ERR);
+
+      IF WK_ERR_FLG = 'Y' THEN
+         PUT FILE(LFRPTF) SKIP(2) LIST(
+            '*** 異常終了 ***');
+      ELSE
+         PUT FILE(LFRPTF) SKIP(2) LIST(
+            '*** 正常終了 ***');
+
+      CLOSE FILE(LFRPTF);
+   END PRINT_SUMMARY_REPORT;
+
+END pmconmon;

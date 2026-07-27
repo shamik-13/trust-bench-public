@@ -1,0 +1,10 @@
+       // CDCAPF2C -- CDCAPF2 レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdcapf2_rec qualified;
+         cp_capture_id      char(10);
+         cp_txn_id          char(10);
+         cp_card_no         char(16);
+         cp_capture_amt     packed(13:2);
+         cp_brand_kbn       char(2);
+         cp_capture_dt      packed(8:0);
+         cp_match_kbn       char(2);
+       end-ds;

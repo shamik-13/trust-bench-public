@@ -1,0 +1,10 @@
+       // CDDUNC -- CDDUNF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cddunf_rec qualified;
+         dun_notice_id      char(10);
+         dun_card_no        char(16);
+         dun_cycle_dt       packed(8:0);
+         dun_delinq_amt     packed(13:2);
+         dun_notice_rank    char(10);
+         dun_channel_cd     char(10);
+         dun_create_dt      packed(8:0);
+       end-ds;

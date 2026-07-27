@@ -1,0 +1,138 @@
+*> PMBNCUPD - 受取人変更処理バッチ (Beneficiary Change Process)
+*> 
+*> 変更履歴
+*> Ver   年月日     担当        概要
+*> 1.0   2024-03-15 佐藤       新規作成（受取人変更バッチ）
+*> 1.1   2024-04-22 鈴木       CHG-TYPE-KBN追加、比率検証ロジック修正
+*> 1.2   2024-06-10 村田       エラーハンドリング強化、ロール情報出力追加
+
+pmbncupd: PROC OPTIONS(MAIN);
+
+%INCLUDE LFCONFC;
+%INCLUDE LFBNCFC;
+%INCLUDE LFCMNHC;
+
+DCL 1 WK-INPUT-REC,
+     2 WK-INPUT-CON-NO      CHAR(12),
+     2 WK-INPUT-ITEM-CNT    FIXED BIN(31),
+     2 WK-INPUT-ITEMS OCCURS(50),
+        3 WK-ITEM-BNC-CD    CHAR(6),
+        3 WK-ITEM-BNC-RATIO FIXED DEC(5,2);
+
+DCL WK-RATIO-TOTAL      FIXED DEC(7,2) INIT(0);
+DCL WK-RATIO-WORK       FIXED DEC(5,2) INIT(0);
+DCL WK-ITEM-IDX         FIXED BIN(31) INIT(0);
+DCL WK-BNC-IDX          FIXED BIN(31) INIT(0);
+DCL WK-EOF-FLAG         CHAR(1) INIT('N');
+DCL WK-ERROR-FLG        CHAR(1) INIT('N');
+DCL WK-PROC-COUNT       FIXED BIN(31) INIT(0);
+DCL WK-PROC-OK-COUNT    FIXED BIN(31) INIT(0);
+DCL WK-PROC-NG-COUNT    FIXED BIN(31) INIT(0);
+DCL WK-ERR-MSG          CHAR(128) INIT('');
+DCL WK-TODAY            CHAR(8) INIT('');
+
+DCL BNCH-INPUT-FILE     FILE RECORD 
+     ENV(FB RECSIZE(1024) ORGANIZATION(SEQUENTIAL));
+DCL LFCONF-FILE         FILE KEYED 
+     ENV(INDEXED ORGANIZATION(INDEXED));
+DCL LFBNCF-FILE         FILE KEYED 
+     ENV(INDEXED ORGANIZATION(INDEXED));
+DCL LFCMNH-FILE         FILE SEQUENTIAL 
+     ENV(FB RECSIZE(256) ORGANIZATION(SEQUENTIAL));
+
+ON ENDFILE(BNCH-INPUT-FILE) BEGIN;
+  WK-EOF-FLAG = 'Y';
+END;
+
+ON ERROR BEGIN;
+  PUT SKIP LIST('**エラー** ファイル処理エラーが発生しました');
+  WK-ERROR-FLG = 'Y';
+END;
+
+*> ファイルをオープン
+OPEN FILE(BNCH-INPUT-FILE) INPUT;
+OPEN FILE(LFCONF-FILE) UPDATE;
+OPEN FILE(LFBNCF-FILE) UPDATE;
+OPEN FILE(LFCMNH-FILE) OUTPUT;
+
+*> メインループ：入力ファイルから受取人変更レコードを読み込む
+DO WHILE(WK-EOF-FLAG = 'N');
+  
+  *> 入力レコード読み込み
+  READ FILE(BNCH-INPUT-FILE) INTO(WK-INPUT-REC);
+  
+  IF WK-EOF-FLAG = 'Y' THEN LEAVE;
+  
+  WK-ERROR-FLG = 'N';
+  WK-RATIO-TOTAL = 0;
+  
+  WK-PROC-COUNT = WK-PROC-COUNT + 1;
+  
+  *> ステップ1：契約マスタから既存レコードを取得・確認
+  FETCH FILE(LFCONF-FILE) KEY(WK-INPUT-CON-NO);
+  IF LFCONF-CON-STATUS-KBN ^= '01' THEN DO;
+    PUT SKIP LIST('**警告** CON-NO:' || TRIM(WK-INPUT-CON-NO) 
+         || ' ステータス不正:' || LFCONF-CON-STATUS-KBN 
+         || ' （正数値: 01）');
+    WK-PROC-NG-COUNT = WK-PROC-NG-COUNT + 1;
+    ITERATE;
+  END;
+  
+  *> ステップ2：既存の受取人レコード群をすべて削除
+  DELETE FILE(LFBNCF-FILE) ALL KEY(WK-INPUT-CON-NO);
+  
+  *> ステップ3：新規受取人レコード群を挿入、比率合計を検証
+  DO WK-ITEM-IDX = 1 TO WK-INPUT-ITEM-CNT;
+    
+    *> 受取人ファイル新規レコードを構築
+    LFBNCF-CON-NO = WK-INPUT-CON-NO;
+    LFBNCF-BNC-CD = WK-ITEM-BNC-CD(WK-ITEM-IDX);
+    LFBNCF-BNC-RATIO = WK-ITEM-BNC-RATIO(WK-ITEM-IDX);
+    LFBNCF-BNC-STATUS-KBN = '01';
+    
+    *> 受取人ファイルに書き込み
+    WRITE FILE(LFBNCF-FILE) FROM(LFBNCF-REC);
+    
+    *> 比率を累積
+    WK-RATIO-WORK = WK-ITEM-BNC-RATIO(WK-ITEM-IDX);
+    WK-RATIO-TOTAL = WK-RATIO-TOTAL + WK-RATIO-WORK;
+    
+  END; *> DO WK-ITEM-IDX LOOP
+  
+  *> ステップ4：受取人比率の合計が100.00であるか検証
+  IF WK-RATIO-TOTAL ^= 100.00 THEN DO;
+    WK-ERR-MSG = '比率合計=' || WK-RATIO-TOTAL;
+    PUT SKIP LIST('**エラー** CON-NO:' || TRIM(WK-INPUT-CON-NO) 
+         || ' ' || TRIM(WK-ERR-MSG) || ' （正数値: 100.00）');
+    WK-ERROR-FLG = 'Y';
+    WK-PROC-NG-COUNT = WK-PROC-NG-COUNT + 1;
+    ITERATE;
+  END;
+  
+  *> ステップ5：変更履歴レコードを構築し出力
+  LFCMNH-CON-NO = WK-INPUT-CON-NO;
+  LFCMNH-CHG-TYPE-KBN = 'BN';
+  LFCMNH-CHG-ITEM-KBN = 'BNC';
+  
+  WRITE FILE(LFCMNH-FILE) FROM(LFCMNH-REC);
+  
+  WK-PROC-OK-COUNT = WK-PROC-OK-COUNT + 1;
+  
+END; *> DO WHILE EOF-FLAG LOOP
+
+*> ファイルをクローズ
+CLOSE FILE(BNCH-INPUT-FILE);
+CLOSE FILE(LFCONF-FILE);
+CLOSE FILE(LFBNCF-FILE);
+CLOSE FILE(LFCMNH-FILE);
+
+*> 処理結果を出力
+PUT SKIP LIST('====================================');
+PUT SKIP LIST('処理終了');
+PUT SKIP LIST('====================================');
+PUT SKIP LIST('総処理件数:     ' || WK-PROC-COUNT);
+PUT SKIP LIST('正常完了件数:   ' || WK-PROC-OK-COUNT);
+PUT SKIP LIST('エラー件数:     ' || WK-PROC-NG-COUNT);
+PUT SKIP LIST('====================================');
+
+END pmbncupd;

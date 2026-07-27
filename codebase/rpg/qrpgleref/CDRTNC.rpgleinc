@@ -1,0 +1,10 @@
+       // CDRTNC -- CDRTNF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdrtnf_rec qualified;
+         rt_return_id       char(10);
+         rt_sale_id         char(10);
+         rt_card_no         char(16);
+         rt_return_amt      packed(13:2);
+         rt_return_dt       packed(8:0);
+         rt_return_reason   char(4);
+         rt_approval_status char(2);
+       end-ds;

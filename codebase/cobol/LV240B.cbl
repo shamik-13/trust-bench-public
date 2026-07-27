@@ -1,0 +1,211 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. LV240B.
+      *
+      * 契約復活候補抽出バッチ
+      * 失効後の復活可能期間内にある契約を抽出し、復活審査用の受付
+      * レコードをLFREQFへ作成する。
+      *
+       ENVIRONMENT DIVISION.
+       CONFIGURATION SECTION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT LVCHGF ASSIGN TO EXTERNAL LS-LVCHGF-FILE
+               ORGANIZATION IS INDEXED
+               RECORD KEY IS CH-CHANGE-ID
+               FILE STATUS IS WS-RC-LVCHGF.
+
+           SELECT LFPOLF2 ASSIGN TO EXTERNAL LS-LFPOLF2-FILE
+               ORGANIZATION IS INDEXED
+               RECORD KEY IS PO-POL-NO
+               FILE STATUS IS WS-RC-LFPOLF2.
+
+           SELECT LFRSVF ASSIGN TO EXTERNAL LS-LFRSVF-FILE
+               ORGANIZATION IS INDEXED
+               RECORD KEY IS RS-POL-NO
+               FILE STATUS IS WS-RC-LFRSVF.
+
+           SELECT LFREQF ASSIGN TO EXTERNAL LS-LFREQF-FILE
+               ORGANIZATION IS INDEXED
+               RECORD KEY IS RQ-REQ-ID
+               FILE STATUS IS WS-RC-LFREQF.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD LVCHGF.
+       COPY LVCHGC.
+
+       FD LFPOLF2.
+       COPY LFPOLF2C.
+
+       FD LFRSVF.
+       COPY LFRSVC.
+
+       FD LFREQF.
+       COPY LFREQC.
+
+       WORKING-STORAGE SECTION.
+       01 WS-FILE-ASSIGNMENTS.
+           05 LS-LVCHGF-FILE PIC X(50) VALUE 'LVCHGF'.
+           05 LS-LFPOLF2-FILE PIC X(50) VALUE 'LFPOLF2'.
+           05 LS-LFRSVF-FILE PIC X(50) VALUE 'LFRSVF'.
+           05 LS-LFREQF-FILE PIC X(50) VALUE 'LFREQF'.
+
+       01 WS-FILE-STATUS-FIELDS.
+           05 WS-RC-LVCHGF PIC XX VALUE '  '.
+           05 WS-RC-LFPOLF2 PIC XX VALUE '  '.
+           05 WS-RC-LFRSVF PIC XX VALUE '  '.
+           05 WS-RC-LFREQF PIC XX VALUE '  '.
+
+       01 WS-PROGRAM-FLAGS.
+           05 WS-EOF-FLAG PIC 9(1) VALUE 0.
+           05 WS-POLICY-FOUND PIC 9(1) VALUE 0.
+           05 WS-RESERVE-FOUND PIC 9(1) VALUE 0.
+
+       01 WS-PROCESS-COUNTERS.
+           05 WS-TOTAL-CHANGES PIC 9(8) VALUE 0.
+           05 WS-REQUESTS-CREATED PIC 9(8) VALUE 0.
+           05 WS-ERROR-COUNT PIC 9(8) VALUE 0.
+           05 WS-REQ-SEQUENCE PIC 9(10) VALUE 0.
+           05 WS-RETURN-CODE-VAL PIC 9(1) VALUE 0.
+
+       01 WS-DATE-FIELDS.
+           05 WS-CURRENT-DATE PIC 9(8).
+           05 WS-CURRENT-TIME PIC 9(6).
+           05 WS-LAPSE-DATE PIC 9(8).
+           05 WS-REVIVAL-LIMIT PIC 9(8).
+           05 WS-DAYS-AFTER-LAPSE PIC 999 VALUE 090.
+
+       PROCEDURE DIVISION.
+
+       MAINLINE.
+           PERFORM INITIALIZE-BATCH
+           IF WS-RETURN-CODE-VAL NOT = 0
+               MOVE WS-RETURN-CODE-VAL TO RETURN-CODE
+               GOBACK
+           END-IF
+           PERFORM PROCESS-CHANGES
+           PERFORM FINALIZE-BATCH
+           MOVE WS-RETURN-CODE-VAL TO RETURN-CODE
+           GOBACK.
+
+       INITIALIZE-BATCH.
+           ACCEPT WS-CURRENT-DATE FROM DATE YYYYMMDD
+           ACCEPT WS-CURRENT-TIME FROM TIME
+           OPEN INPUT LVCHGF
+           IF WS-RC-LVCHGF NOT = '00'
+               DISPLAY 'LVCHGF OPEN ERROR'
+               DISPLAY 'STATUS: ' WS-RC-LVCHGF
+               MOVE 8 TO WS-RETURN-CODE-VAL
+               EXIT PARAGRAPH
+           END-IF
+           OPEN INPUT LFPOLF2
+           IF WS-RC-LFPOLF2 NOT = '00'
+               DISPLAY 'LFPOLF2 OPEN ERROR'
+               DISPLAY 'STATUS: ' WS-RC-LFPOLF2
+               CLOSE LVCHGF
+               MOVE 8 TO WS-RETURN-CODE-VAL
+               EXIT PARAGRAPH
+           END-IF
+           OPEN INPUT LFRSVF
+           IF WS-RC-LFRSVF NOT = '00'
+               DISPLAY 'LFRSVF OPEN ERROR'
+               DISPLAY 'STATUS: ' WS-RC-LFRSVF
+               CLOSE LVCHGF
+               CLOSE LFPOLF2
+               MOVE 8 TO WS-RETURN-CODE-VAL
+               EXIT PARAGRAPH
+           END-IF
+           OPEN OUTPUT LFREQF
+           IF WS-RC-LFREQF NOT = '00'
+               DISPLAY 'LFREQF OPEN ERROR'
+               DISPLAY 'STATUS: ' WS-RC-LFREQF
+               CLOSE LVCHGF
+               CLOSE LFPOLF2
+               CLOSE LFRSVF
+               MOVE 8 TO WS-RETURN-CODE-VAL
+               EXIT PARAGRAPH
+           END-IF.
+
+       PROCESS-CHANGES.
+           MOVE 0 TO WS-EOF-FLAG
+           PERFORM UNTIL WS-EOF-FLAG = 1
+               READ LVCHGF
+                   AT END MOVE 1 TO WS-EOF-FLAG
+                   NOT AT END
+                       PERFORM PROCESS-CHANGE-RECORD
+               END-READ
+           END-PERFORM.
+
+       PROCESS-CHANGE-RECORD.
+           ADD 1 TO WS-TOTAL-CHANGES
+           IF CH-AFTER-STATUS-KBN NOT = '02'
+               EXIT PARAGRAPH
+           END-IF
+           IF CH-BEFORE-STATUS-KBN = '05'
+               EXIT PARAGRAPH
+           END-IF
+           MOVE CH-POL-NO TO PO-POL-NO
+           MOVE 0 TO WS-POLICY-FOUND
+           READ LFPOLF2
+               NOT AT END MOVE 1 TO WS-POLICY-FOUND
+               AT END MOVE 0 TO WS-POLICY-FOUND
+           END-READ
+           IF WS-POLICY-FOUND = 0
+               ADD 1 TO WS-ERROR-COUNT
+               EXIT PARAGRAPH
+           END-IF
+           MOVE CH-CHANGE-DATE TO WS-LAPSE-DATE
+           PERFORM CALCULATE-REVIVAL-LIMIT-DATE
+           IF WS-CURRENT-DATE > WS-REVIVAL-LIMIT
+               EXIT PARAGRAPH
+           END-IF
+           MOVE CH-POL-NO TO RS-POL-NO
+           MOVE 0 TO WS-RESERVE-FOUND
+           READ LFRSVF
+               NOT AT END MOVE 1 TO WS-RESERVE-FOUND
+               AT END MOVE 0 TO WS-RESERVE-FOUND
+           END-READ
+           PERFORM CREATE-REQUEST-RECORD.
+
+       CALCULATE-REVIVAL-LIMIT-DATE.
+           COMPUTE WS-REVIVAL-LIMIT =
+               WS-LAPSE-DATE + WS-DAYS-AFTER-LAPSE.
+
+       CREATE-REQUEST-RECORD.
+           ADD 1 TO WS-REQ-SEQUENCE
+           MOVE WS-REQ-SEQUENCE TO RQ-REQ-ID
+           MOVE CH-POL-NO TO RQ-POL-NO
+           MOVE WS-CURRENT-DATE TO RQ-REQ-DATE
+           MOVE '01' TO RQ-REQ-TYPE-KBN
+           MOVE '00' TO RQ-REQ-STATUS-KBN
+           MOVE '0000' TO RQ-OPERATOR-ID
+           MOVE '0000' TO RQ-RECEIPT-BRANCH-CD
+           WRITE LFREQF-REC
+           IF WS-RC-LFREQF NOT = '00'
+               ADD 1 TO WS-ERROR-COUNT
+               DISPLAY 'LFREQF WRITE ERROR'
+               DISPLAY 'POLICY: ' CH-POL-NO
+               DISPLAY 'STATUS: ' WS-RC-LFREQF
+               EXIT PARAGRAPH
+           END-IF
+           ADD 1 TO WS-REQUESTS-CREATED.
+
+       FINALIZE-BATCH.
+           CLOSE LVCHGF
+           CLOSE LFPOLF2
+           CLOSE LFRSVF
+           CLOSE LFREQF
+           DISPLAY '===================================='
+           DISPLAY 'BATCH JOB COMPLETION REPORT'
+           DISPLAY '===================================='
+           DISPLAY 'DATE: ' WS-CURRENT-DATE
+           DISPLAY 'TIME: ' WS-CURRENT-TIME
+           DISPLAY 'CHANGES READ: ' WS-TOTAL-CHANGES
+           DISPLAY 'REQUESTS CREATED: ' WS-REQUESTS-CREATED
+           DISPLAY 'ERROR COUNT: ' WS-ERROR-COUNT
+           DISPLAY '===================================='
+           IF WS-ERROR-COUNT > 0
+               MOVE 8 TO WS-RETURN-CODE-VAL
+           ELSE
+               MOVE 0 TO WS-RETURN-CODE-VAL
+           END-IF.

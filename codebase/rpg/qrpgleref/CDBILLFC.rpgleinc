@@ -1,0 +1,10 @@
+       // CDBILLFC -- CDBILLF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdbillf_rec qualified;
+         bi_card_no         char(16);
+         bi_cycle_dt        packed(8:0);
+         bi_bill_amt        packed(13:2);
+         bi_min_pay_amt     packed(13:2);
+         bi_due_dt          packed(8:0);
+         bi_bill_status     char(2);
+         bi_program_id      char(10);
+       end-ds;

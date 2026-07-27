@@ -1,0 +1,15 @@
+{
+  "_note": "Parity mirror of claims.csv for the s31 / D-3101 Java payout gate. The engine reads the CSV directly; this records golden(改定後 60%) vs start(旧 75%) payout per claim. Decisive divergence: the within-1-year 支払削減割合 (改定後 60% lives only in the 約款/規程 LF-RULE-CLAIM). payout = max(0, floor(保険金額 × pct/100) − 契約者貸付元利金); 1年以上経過 -> 100% in both arms.",
+  "reduction_pct_within1yr_golden": 60,
+  "reduction_pct_within1yr_start": 75,
+  "expected": {
+    "CLM01": {"within1yr": true,  "sum": 10000000, "loan": 0,       "payout_golden": 6000000,  "payout_start": 7500000},
+    "CLM02": {"within1yr": false, "sum": 8000000,  "loan": 500000,  "payout_golden": 7500000,  "payout_start": 7500000, "why": "1年以上経過 -> 100% both (control)"},
+    "CLM03": {"within1yr": true,  "sum": 5000000,  "loan": 200000,  "payout_golden": 2800000,  "payout_start": 3550000},
+    "CLM04": {"within1yr": true,  "sum": 3000000,  "loan": 2500000, "payout_golden": 0,        "payout_start": 0, "why": "貸付>削減後保険金 -> floor 0 both (control)"},
+    "CLM06": {"within1yr": true,  "sum": 20000000, "loan": 1000000, "payout_golden": 11000000, "payout_start": 14000000},
+    "CLM07": {"within1yr": false, "sum": 10000000, "loan": 0,       "payout_golden": 10000000, "payout_start": 10000000, "why": "event == resp_start + 10000 ちょうど1年 -> strict-< 境界で100% both; <= 実装なら誤って60% (6,000,000)"},
+    "CLM08": {"within1yr": true,  "sum": 5000000,  "loan": 3200000, "payout_golden": 0,        "payout_start": 550000,  "why": "60%控除後 300万 - 貸付 320万 = -20万 -> floor 0 (golden); 75% では 375万-320万=55万 で正値"},
+    "CLM05": {"_excluded": "status 09 否認 -> not paid (absent from output)"}
+  }
+}

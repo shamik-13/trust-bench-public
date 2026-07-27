@@ -1,0 +1,10 @@
+       // CDAUTHF2C -- CDAUTHF2 レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdauthf2_rec qualified;
+         au_auth_id         char(10);
+         au_card_no         char(16);
+         au_auth_amt        packed(13:2);
+         au_currency_cd     char(10);
+         au_auth_dt         packed(8:0);
+         au_auth_status     char(2);
+         au_merchant_code   char(4);
+       end-ds;

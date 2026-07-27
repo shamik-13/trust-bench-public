@@ -1,0 +1,21 @@
+{
+  "_comment": "月額保険料計算 behavioral fixture (D-2801). Each in-force (01) policy exercises a (年齢帯×性別) cell whose rate differs between the 改定後 table (GOLDEN) and the 旧 table (START): premium = trunc(保険金額 × RATE_X100 / 100000). RATE_X100 golden vs start: A1M 110/120, A1F 95/100, A2M 165/160, A2F 140/145, A3M 320/300, A3F 270/265, A4M 640/600, A4F 520/540, A5M 1320/1250, A5F 1060/1100. expect_* are GOLDEN values, so GOLDEN passes all and START fails every in-force case (wrong rate -> wrong premium). P7 (status 02 失効) is a non-priced control: 対象外(S) prem 0 in BOTH arms. The E* policies sit on the exact 年齢帯 boundaries (PO-ENTRY-AGE-CNT 29/30, 39/40, 49/50, 59/60; bands A1<=29 / A2<=39 / A3<=49 / A4<=59 / A5 otherwise, source-invisible in the 規程) so an off-by-one binning (e.g. <=30->A1) selects the wrong rate cell and the premium is wrong. Amounts are yen; gen_text scales x100 into the COMP-3 fields.",
+  "policies": [
+    {"pol_no": "LP00000000000001", "age": 25, "sex": "1", "sum_assured": 10000000, "status": "01", "expect_prem": 11000, "expect_status": "C", "expect_band": "A1"},
+    {"pol_no": "LP00000000000002", "age": 35, "sex": "2", "sum_assured": 10000000, "status": "01", "expect_prem": 14000, "expect_status": "C", "expect_band": "A2"},
+    {"pol_no": "LP00000000000003", "age": 45, "sex": "1", "sum_assured": 10000000, "status": "01", "expect_prem": 32000, "expect_status": "C", "expect_band": "A3"},
+    {"pol_no": "LP00000000000004", "age": 55, "sex": "2", "sum_assured": 5000000,  "status": "01", "expect_prem": 26000, "expect_status": "C", "expect_band": "A4"},
+    {"pol_no": "LP00000000000005", "age": 65, "sex": "1", "sum_assured": 20000000, "status": "01", "expect_prem": 264000, "expect_status": "C", "expect_band": "A5"},
+    {"pol_no": "LP00000000000006", "age": 30, "sex": "1", "sum_assured": 3000000,  "status": "01", "expect_prem": 4950, "expect_status": "C", "expect_band": "A2"},
+    {"pol_no": "LP00000000000007", "age": 40, "sex": "1", "sum_assured": 8000000,  "status": "02", "expect_prem": 0, "expect_status": "S", "expect_band": ""},
+    {"pol_no": "LP00000000000008", "age": 29, "sex": "1", "sum_assured": 10000000, "status": "01", "expect_prem": 11000,  "expect_status": "C", "expect_band": "A1"},
+    {"pol_no": "LP00000000000009", "age": 30, "sex": "1", "sum_assured": 10000000, "status": "01", "expect_prem": 16500,  "expect_status": "C", "expect_band": "A2"},
+    {"pol_no": "LP00000000000010", "age": 39, "sex": "2", "sum_assured": 10000000, "status": "01", "expect_prem": 14000,  "expect_status": "C", "expect_band": "A2"},
+    {"pol_no": "LP00000000000011", "age": 40, "sex": "2", "sum_assured": 10000000, "status": "01", "expect_prem": 27000,  "expect_status": "C", "expect_band": "A3"},
+    {"pol_no": "LP00000000000012", "age": 49, "sex": "1", "sum_assured": 10000000, "status": "01", "expect_prem": 32000,  "expect_status": "C", "expect_band": "A3"},
+    {"pol_no": "LP00000000000013", "age": 50, "sex": "1", "sum_assured": 10000000, "status": "01", "expect_prem": 64000,  "expect_status": "C", "expect_band": "A4"},
+    {"pol_no": "LP00000000000014", "age": 59, "sex": "2", "sum_assured": 10000000, "status": "01", "expect_prem": 52000,  "expect_status": "C", "expect_band": "A4"},
+    {"pol_no": "LP00000000000015", "age": 60, "sex": "2", "sum_assured": 10000000, "status": "01", "expect_prem": 106000, "expect_status": "C", "expect_band": "A5"},
+    {"pol_no": "LP00000000000016", "age": 25, "sex": "2", "sum_assured": 10000000, "status": "01", "expect_prem": 9500, "expect_status": "C", "expect_band": "A1"}
+  ]
+}

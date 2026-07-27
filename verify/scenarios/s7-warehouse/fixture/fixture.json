@@ -1,0 +1,9 @@
+{
+  "_comment": "S7 DWH-extract behavioral fixture. JH410B reads KZFEEHF and writes JHDWHF. GOLDEN extracts ONLY confirmed rows (FH-CONFIRM-FLAG='Y', D-1302); START extracts every row (the early-run cascade leaks unconfirmed fees). expect_extracted is the GOLDEN expectation. F02/F04 (unconfirmed) discriminate; F01/F03 (confirmed) are controls.",
+  "fees": [
+    {"acct": "0000000000000001", "cycle": 20260331, "fee": 12000, "ytd": 36000, "confirm": "Y", "expect_extracted": true},
+    {"acct": "0000000000000002", "cycle": 20260331, "fee":  8000, "ytd": 24000, "confirm": "N", "expect_extracted": false},
+    {"acct": "0000000000000003", "cycle": 20260331, "fee": 15000, "ytd": 45000, "confirm": "Y", "expect_extracted": true},
+    {"acct": "0000000000000004", "cycle": 20260331, "fee":  5000, "ytd": 15000, "confirm": "N", "expect_extracted": false}
+  ]
+}

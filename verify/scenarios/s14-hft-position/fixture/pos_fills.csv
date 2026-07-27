@@ -1,0 +1,10 @@
+# cif,instr,qty,price  (qty signed: 買い+ / 売り-; price ×100 minor units)
+# CIF01/AAA: two buys at different prices -> weighted avg 1500 (golden); last-price 2000 (start) -> discriminates
+CIF01,AAA,100,1000
+CIF01,AAA,100,2000
+# CIF01/BBB: single fill -> weighted == last == 3000 (both pass, control)
+CIF01,BBB,100,3000
+# CIF02/CCC: offsetting buy+sell. Documented Σ|qty|×amt / Σ|qty| = (200*1000 + 100*4000)/300 = 2000.
+#   A naive net_qty denominator (Σ qty signed) gives (200000-400000)/100 = -2000; last-price (start) = 4000.
+CIF02,CCC,200,1000
+CIF02,CCC,-100,4000

@@ -1,0 +1,287 @@
+/* --------------------------------------------------------------- */
+/*  変更履歴                                                       */
+/*  版数    年月日      担当        概要                           */
+/*  01.00   2019/04/01  中川 美和 (E-283)        初版作成                       */
+/*  01.01   2020/11/16  福田 亮太 (E-211)        休業日区分判定追加             */
+/*  01.02   2022/06/20  村上 健司 (E-301)        負数残高時の監査出力追加       */
+/*  01.03   2024/02/05  村上 健司 (E-301)        PENDING-OUT-QTY再計算追加      */
+/* --------------------------------------------------------------- */
+
+mihft_custody_lock_release: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCAUDTC;
+
+   DCL POSIIN   FILE RECORD INPUT;
+   DCL POSIOUT  FILE RECORD OUTPUT;
+   DCL SETLIN   FILE RECORD INPUT;
+   DCL AUDITF   FILE RECORD OUTPUT;
+   DCL SCCALF   FILE RECORD INPUT;
+
+   DCL 1 CAL_REC,
+         2 CAL_DATE        PIC'99999999',
+         2 CAL_SESS_KBN    CHAR(1),
+         2 CAL_FILLER      CHAR(71);
+
+   DCL EOF_POSI            BIT(1) INIT('0'B);
+   DCL EOF_SETL            BIT(1) INIT('0'B);
+   DCL EOF_CAL             BIT(1) INIT('0'B);
+   DCL ERR_SW              BIT(1) INIT('0'B);
+
+   DCL HOLD_SETL           BIT(1) INIT('0'B);
+   DCL MATCH_SW            BIT(1) INIT('0'B);
+   DCL RELEASE_SW          BIT(1) INIT('0'B);
+   DCL NG_SW               BIT(1) INIT('0'B);
+
+   DCL WK_LOCK_QTY         FIXED DEC(15,0) INIT(0);
+   DCL WK_REL_QTY          FIXED DEC(15,0) INIT(0);
+   DCL WK_PEND_QTY         FIXED DEC(15,0) INIT(0);
+   DCL WK_NEW_LOCK_QTY     FIXED DEC(15,0) INIT(0);
+   DCL WK_NEW_PEND_QTY     FIXED DEC(15,0) INIT(0);
+   DCL WK_SETL_QTY         FIXED DEC(15,0) INIT(0);
+   DCL WK_AMT              FIXED DEC(17,2) INIT(0);
+
+   DCL WK_BASE_DATE        PIC'99999999';
+   DCL WK_SETL_DATE        PIC'99999999';
+   DCL WK_CAL_DATE         PIC'99999999';
+   DCL WK_YYYY             FIXED DEC(4,0);
+   DCL WK_MM               FIXED DEC(2,0);
+   DCL WK_DD               FIXED DEC(2,0);
+   DCL WK_DAYS             FIXED DEC(3,0);
+   DCL WK_ADD_CNT          FIXED DEC(1,0);
+   DCL WK_CMP              FIXED DEC(1,0);
+
+   DCL WK_MSG              CHAR(80) INIT('');
+   DCL WK_PGM              CHAR(24) INIT('MIHFT_CUSTODY_LOCK_REL');
+   DCL WK_OPID             CHAR(8)  INIT('BATCH   ');
+   DCL WK_DATE8            PIC'99999999' INIT('00000000');
+   DCL WK_TIME6            PIC'999999'   INIT('000000');
+
+   DCL 1 WK_KEY_POSI,
+         2 WK_POSI_CIF     CHAR(16),
+         2 WK_POSI_INSTR   CHAR(4);
+
+   DCL 1 WK_KEY_SETL,
+         2 WK_SETL_CIF     CHAR(16),
+         2 WK_SETL_INSTR   CHAR(4);
+
+   ON ENDFILE(POSIIN) EOF_POSI = '1'B;
+   ON ENDFILE(SETLIN) EOF_SETL = '1'B;
+   ON ENDFILE(SCCALF) EOF_CAL  = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      WK_MSG = '異常終了：入出力又は算術例外';
+      CALL WRITE_AUDIT('E', '0000000000', 'F', 'F');
+      GOTO CLOSE_PROC;
+   END;
+
+   OPEN FILE(POSIIN),
+        FILE(POSIOUT),
+        FILE(SETLIN),
+        FILE(AUDITF),
+        FILE(SCCALF);
+
+   READ FILE(POSIIN) INTO(SCPOSI_REC);
+   READ FILE(SETLIN) INTO(SCSETL_REC);
+
+   DO WHILE(^EOF_POSI & ^ERR_SW);
+
+      WK_POSI_CIF   = PS_CIF_NO;
+      WK_POSI_INSTR = PS_INSTR_CODE;
+
+      WK_LOCK_QTY = PS_LOCK_QTY;
+      WK_PEND_QTY = PS_PENDING_OUT_QTY;
+      WK_REL_QTY  = 0;
+      NG_SW       = '0'B;
+
+      DO WHILE(^EOF_SETL);
+
+         WK_SETL_CIF   = ST_CIF_NO;
+         WK_SETL_INSTR = ST_INSTR_CODE;
+
+         WK_CMP = 0;
+         IF WK_SETL_CIF < WK_POSI_CIF THEN WK_CMP = -1;
+         ELSE IF WK_SETL_CIF > WK_POSI_CIF THEN WK_CMP = 1;
+         ELSE IF WK_SETL_INSTR < WK_POSI_INSTR THEN WK_CMP = -1;
+         ELSE IF WK_SETL_INSTR > WK_POSI_INSTR THEN WK_CMP = 1;
+
+         IF WK_CMP < 0 THEN
+            READ FILE(SETLIN) INTO(SCSETL_REC);
+         ELSE IF WK_CMP > 0 THEN
+            LEAVE;
+         ELSE DO;
+
+            RELEASE_SW = '0'B;
+            WK_SETL_QTY = WK_PEND_QTY;
+            WK_AMT      = ST_SETL_AMT;
+
+            SELECT (ST_SETL_KBN);
+               WHEN ('DVP')
+                  DO;
+                     IF ST_STATUS_KBN = 'F' THEN
+                        RELEASE_SW = '1'B;
+                     ELSE IF ST_STATUS_KBN = 'C' THEN
+                        RELEASE_SW = '1'B;
+                  END;
+               WHEN ('CASH')
+                  DO;
+                     RELEASE_SW = '0'B;
+                  END;
+               OTHERWISE
+                  DO;
+                     WK_MSG = '決済区分不正';
+                     CALL WRITE_AUDIT('W', ST_SETL_ID, 'F', 'F');
+                  END;
+            END;
+
+            IF RELEASE_SW THEN DO;
+
+               WK_BASE_DATE = ST_TRADE_DT;
+               WK_SETL_DATE = WK_BASE_DATE;
+               WK_ADD_CNT   = 0;
+
+               DO WHILE(WK_ADD_CNT < 2);
+                  CALL ADD_ONE_DAY;
+                  CALL CAL_SESSION;
+                  IF CAL_SESS_KBN = 'B' THEN
+                     WK_ADD_CNT = WK_ADD_CNT + 1;
+               END;
+
+               CALL CAL_SESSION;
+               DO WHILE(CAL_SESS_KBN = 'H');
+                  CALL ADD_ONE_DAY;
+                  CALL CAL_SESSION;
+               END;
+
+               IF ST_SETL_DT ^= WK_SETL_DATE THEN DO;
+                  WK_MSG = '受渡日規則相違';
+                  CALL WRITE_AUDIT('W', ST_SETL_ID, ST_STATUS_KBN,
+                                   ST_STATUS_KBN);
+               END;
+
+               WK_NEW_LOCK_QTY = WK_LOCK_QTY - WK_SETL_QTY;
+               WK_NEW_PEND_QTY = WK_PEND_QTY - WK_SETL_QTY;
+
+               IF WK_NEW_LOCK_QTY < 0 | WK_NEW_PEND_QTY < 0 THEN DO;
+                  NG_SW = '1'B;
+                  WK_MSG = '負数残高発生のため更新保留';
+                  CALL WRITE_AUDIT('A', ST_SETL_ID, ST_STATUS_KBN, 'P');
+               END;
+               ELSE DO;
+                  WK_LOCK_QTY = WK_NEW_LOCK_QTY;
+                  WK_PEND_QTY = WK_NEW_PEND_QTY;
+                  WK_REL_QTY  = WK_REL_QTY + WK_SETL_QTY;
+
+                  WK_MSG = 'ロック解除';
+                  CALL WRITE_AUDIT('R', ST_SETL_ID, ST_STATUS_KBN,
+                                   PS_STATUS_KBN);
+               END;
+            END;
+
+            READ FILE(SETLIN) INTO(SCSETL_REC);
+         END;
+      END;
+
+      IF NG_SW THEN DO;
+         PS_STATUS_KBN = 'P';
+      END;
+      ELSE DO;
+         PS_LOCK_QTY        = WK_LOCK_QTY;
+         PS_PENDING_OUT_QTY = WK_PEND_QTY;
+
+         IF WK_REL_QTY > 0 THEN DO;
+            SELECT (PS_STATUS_KBN);
+               WHEN ('F') PS_STATUS_KBN = 'P';
+               WHEN ('S') PS_STATUS_KBN = 'S';
+               OTHERWISE  PS_STATUS_KBN = 'P';
+            END;
+         END;
+      END;
+
+      WRITE FILE(POSIOUT) FROM(SCPOSI_REC);
+      READ FILE(POSIIN) INTO(SCPOSI_REC);
+
+   END;
+
+CLOSE_PROC:
+   CLOSE FILE(POSIIN),
+         FILE(POSIOUT),
+         FILE(SETLIN),
+         FILE(AUDITF),
+         FILE(SCCALF);
+
+   RETURN;
+
+ADD_ONE_DAY: PROC;
+   WK_YYYY = SUBSTR(WK_SETL_DATE,1,4);
+   WK_MM   = SUBSTR(WK_SETL_DATE,5,2);
+   WK_DD   = SUBSTR(WK_SETL_DATE,7,2);
+
+   SELECT (WK_MM);
+      WHEN (1,3,5,7,8,10,12) WK_DAYS = 31;
+      WHEN (4,6,9,11)        WK_DAYS = 30;
+      WHEN (2)
+         DO;
+            IF MOD(WK_YYYY,400) = 0 THEN WK_DAYS = 29;
+            ELSE IF MOD(WK_YYYY,100) = 0 THEN WK_DAYS = 28;
+            ELSE IF MOD(WK_YYYY,4) = 0 THEN WK_DAYS = 29;
+            ELSE WK_DAYS = 28;
+         END;
+      OTHERWISE WK_DAYS = 31;
+   END;
+
+   WK_DD = WK_DD + 1;
+   IF WK_DD > WK_DAYS THEN DO;
+      WK_DD = 1;
+      WK_MM = WK_MM + 1;
+      IF WK_MM > 12 THEN DO;
+         WK_MM = 1;
+         WK_YYYY = WK_YYYY + 1;
+      END;
+   END;
+
+   SUBSTR(WK_SETL_DATE,1,4) = WK_YYYY;
+   SUBSTR(WK_SETL_DATE,5,2) = WK_MM;
+   SUBSTR(WK_SETL_DATE,7,2) = WK_DD;
+END ADD_ONE_DAY;
+
+CAL_SESSION: PROC;
+   EOF_CAL = '0'B;
+   CAL_SESS_KBN = 'H';
+
+   DO WHILE(^EOF_CAL);
+      READ FILE(SCCALF) INTO(CAL_REC);
+      IF ^EOF_CAL THEN DO;
+         IF CAL_DATE = WK_SETL_DATE THEN DO;
+            IF CAL_SESS_KBN = 'B' THEN CAL_SESS_KBN = 'B';
+            ELSE CAL_SESS_KBN = 'H';
+            LEAVE;
+         END;
+         IF CAL_DATE > WK_SETL_DATE THEN DO;
+            CAL_SESS_KBN = 'H';
+            LEAVE;
+         END;
+      END;
+   END;
+END CAL_SESSION;
+
+WRITE_AUDIT: PROC(P_KBN, P_REF, P_BEFORE, P_AFTER);
+   DCL P_KBN    CHAR(1);
+   DCL P_REF    CHAR(10);
+   DCL P_BEFORE CHAR(2);
+   DCL P_AFTER  CHAR(2);
+
+   AU_AUDIT_ID      = P_REF;
+   AU_PGM_ID        = SUBSTR(WK_PGM,1,10);
+   AU_BUS_DT        = WK_DATE8;
+   AU_REF_ID        = P_REF;
+   AU_EVENT_KBN     = P_KBN || ' ';
+   AU_BEFORE_STATUS = P_BEFORE;
+   AU_AFTER_STATUS  = P_AFTER;
+   AU_OP_TS         = WK_DATE8 || WK_TIME6;
+   WRITE FILE(AUDITF) FROM(SCAUDT_REC);
+END WRITE_AUDIT;
+
+END mihft_custody_lock_release;

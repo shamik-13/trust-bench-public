@@ -1,0 +1,21 @@
+# txn_id,merchant_code,kbn,amount,dt   (kbn C 売上 / R 返金; amount 円)
+# M001 net 5500 -> charge x.5: golden round 17, start floor 16 (DISCRIMINATES)
+T0001,M001,C,3000,20260601
+T0002,M001,C,2500,20260601
+# M002 net 2000 -> charge 6.0 exact (control)
+T0003,M002,C,2000,20260601
+# M003 net 8500 -> charge x.5: golden round 26, start floor 25 (DISCRIMINATES)
+T0004,M003,C,5000,20260601
+T0005,M003,C,3500,20260601
+# M004 net 7000 (with refund) -> charge 21.0 exact (control w/ refund)
+T0006,M004,C,10000,20260601
+T0007,M004,R,3000,20260601
+# M005 (status 02) -> excluded from settlement (control: absent from output)
+T0008,M005,C,9999,20260601
+# M006 net 9500 (with refund) -> aggregate charge 28.5: golden round 29, start floor 28 (DISCRIMINATES;
+#   confirms half-up is applied to the post-refund AGGREGATE net, not per-transaction)
+T0009,M006,C,12000,20260601
+T0010,M006,R,2500,20260601
+# M007 net -3000 (refunds > captures) -> net<=0 guard: charge 0 (a no-guard/abs solution gives -8)
+T0011,M007,C,2000,20260601
+T0012,M007,R,5000,20260601

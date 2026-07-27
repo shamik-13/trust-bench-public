@@ -1,0 +1,134 @@
+/*====================================================================*/
+/* 変更履歴                                                            */
+/*====================================================================*/
+/* 版数    年月日      担当        概要                                */
+/*====================================================================*/
+/* V1.0.0  2024.04.15  SF部 田中    初版 復活実行処理バッチ            */
+/* V1.0.1  2024.05.22  SF部 鈴木    期限チェック強化                  */
+/* V1.1.0  2024.06.10  SF部 山田    変更履歴記録LFCMNH対応            */
+/*====================================================================*/
+
+pmreinexe: PROC OPTIONS(MAIN);
+
+%INCLUDE 'LFLAPFC';
+%INCLUDE 'LFCONFC';
+%INCLUDE 'LFCMNHC';
+
+   DCL 1 WK-LAPF-REC      LIKE LFLAPF-REC;
+   DCL 1 WK-CONF-REC      LIKE LFCONF-REC;
+   DCL 1 WK-CMNH-REC      LIKE LFCMNH-REC;
+   DCL 1 WK-CONF-REC-OLD  LIKE LFCONF-REC;
+   DCL 1 WK-LAPF-REC-OLD  LIKE LFLAPF-REC;
+
+   DCL WK-REIN-CHK-RSLT   CHAR(2);
+   DCL WK-PROCESS-CNT     FIXED DEC(9) INIT(0);
+   DCL WK-ERROR-CNT       FIXED DEC(9) INIT(0);
+   DCL WK-SUCCESS-CNT     FIXED DEC(9) INIT(0);
+   DCL WK-SYS-DATE        CHAR(8);
+   DCL WK-EOF-FLG         CHAR(1) INIT('N');
+   DCL WK-ERROR-FLG       CHAR(1) INIT('N');
+
+   DCL LFLAPF-FILE        FILE RECORD SEQUENTIAL INPUT;
+   DCL LFCONF-FILE        FILE RECORD UPDATE;
+   DCL LFCMNH-FILE        FILE RECORD OUTPUT;
+
+   ON ENDFILE(LFLAPF-FILE)
+      WK-EOF-FLG = 'Y';
+
+   ON ERROR
+      DO;
+         WK-ERROR-FLG = 'Y';
+         PUT SKIP LIST('*** エラー 入出力エラーが発生しました ***');
+      END;
+
+   /* ファイルのオープン処理 */
+   OPEN FILE(LFLAPF-FILE) INPUT;
+   OPEN FILE(LFCONF-FILE) UPDATE;
+   OPEN FILE(LFCMNH-FILE) OUTPUT;
+
+   /* 失効レコード処理ループ */
+   DO WHILE(WK-EOF-FLG = 'N' & WK-ERROR-FLG = 'N');
+      READ FILE(LFLAPF-FILE) INTO WK-LAPF-REC;
+
+      IF WK-EOF-FLG = 'Y' THEN
+         LEAVE;
+
+      /* 失効日が未設定の場合はスキップ */
+      IF WK-LAPF-REC.LAPSE-DT = SPACES THEN
+         ITERATE;
+
+      WK-PROCESS-CNT = WK-PROCESS-CNT + 1;
+
+      /* 復活可能性チェック処理 */
+      CALL pmreinchk(WK-LAPF-REC.CONC-NO,
+                     WK-LAPF-REC.LAPSE-DT,
+                     WK-REIN-CHK-RSLT);
+
+      /* チェック結果がOKでない場合はスキップ */
+      IF WK-REIN-CHK-RSLT ^= 'OK' THEN
+         DO;
+            WK-ERROR-CNT = WK-ERROR-CNT + 1;
+            ITERATE;
+         END;
+
+      /* 対象契約マスタレコードの読込 */
+      READ FILE(LFCONF-FILE) INTO WK-CONF-REC
+         KEY(WK-LAPF-REC.CONC-NO);
+
+      IF WK-ERROR-FLG = 'Y' THEN
+         DO;
+            WK-ERROR-CNT = WK-ERROR-CNT + 1;
+            ITERATE;
+         END;
+
+      /* 旧値の保存 */
+      WK-CONF-REC-OLD = WK-CONF-REC;
+      WK-LAPF-REC-OLD = WK-LAPF-REC;
+
+      /* LFCONF レコード更新処理 */
+      WK-CONF-REC.CON-STATUS-KBN = '10';
+      WK-CONF-REC.RESP-START-DT = WK-LAPF-REC.LAPSE-DT;
+      WK-CONF-REC.UPD-YMD = WK-SYS-DATE;
+
+      REWRITE FILE(LFCONF-FILE) FROM WK-CONF-REC;
+
+      /* LFLAPF レコード更新処理 */
+      WK-LAPF-REC.LAPSE-PHASE-KBN = '03';
+      WK-LAPF-REC.LAPSE-DT = SPACES;
+      WK-LAPF-REC.UPD-YMD = WK-SYS-DATE;
+
+      REWRITE FILE(LFLAPF-FILE) FROM WK-LAPF-REC;
+
+      /* LFCMNH 履歴レコード書込処理 */
+      WK-CMNH-REC.CONC-NO = WK-LAPF-REC.CONC-NO;
+      WK-CMNH-REC.CHG-TYPE-KBN = 'RI';
+      WK-CMNH-REC.CHG-YMD = WK-SYS-DATE;
+      WK-CMNH-REC.BEF-CON-STATUS-KBN = WK-CONF-REC-OLD.CON-STATUS-KBN;
+      WK-CMNH-REC.AFT-CON-STATUS-KBN = '10';
+      WK-CMNH-REC.BEF-REINST-STATUS = WK-LAPF-REC-OLD.LAPSE-PHASE-KBN;
+      WK-CMNH-REC.AFT-REINST-STATUS = '03';
+      WK-CMNH-REC.REMARKS = '復活実行自動更新';
+
+      WRITE FILE(LFCMNH-FILE) FROM WK-CMNH-REC;
+
+      WK-SUCCESS-CNT = WK-SUCCESS-CNT + 1;
+
+   END;
+
+   /* ファイルクローズ処理 */
+   CLOSE FILE(LFLAPF-FILE);
+   CLOSE FILE(LFCONF-FILE);
+   CLOSE FILE(LFCMNH-FILE);
+
+   /* 処理結果レポート */
+   PUT SKIP(2) LIST('===== 復活実行処理バッチ 処理終了 =====');
+   PUT SKIP LIST('処理件数: ', WK-PROCESS-CNT);
+   PUT SKIP LIST('成功件数: ', WK-SUCCESS-CNT);
+   PUT SKIP LIST('失敗件数: ', WK-ERROR-CNT);
+
+   IF WK-ERROR-FLG = 'Y' THEN
+      STOP RUN RETURN(1);
+
+   STOP RUN;
+
+END pmreinexe;

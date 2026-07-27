@@ -1,0 +1,9 @@
+       // CDDLNQC -- CDDELINQF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cddelinqf_rec qualified;
+         dl_card_no         char(16);
+         dl_cycle_dt        packed(8:0);
+         dl_days_past_due   char(10);
+         dl_past_due_amt    packed(13:2);
+         dl_dunning_stage   char(10);
+         dl_extract_dt      packed(8:0);
+       end-ds;

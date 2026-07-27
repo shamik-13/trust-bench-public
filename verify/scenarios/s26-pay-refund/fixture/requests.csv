@@ -1,0 +1,17 @@
+# req_id,orig_txn_id,refund_amt,req_dt,reason
+# R1: 59d -> A both (control)
+R1,O1,5000,20260301,10
+# R2: 120d -> golden A (<=180), start D/WIN (>90)  DISCRIMINATE
+R2,O2,5000,20260501,10
+# R3: 165d -> golden A, start D/WIN  DISCRIMINATE
+R3,O3,5000,20260615,20
+# R4: 273d -> D/WIN both (control)
+R4,O4,5000,20261001,10
+# R5: 31d but refund 6000 > orig 5000 -> D/AMT both (control)
+R5,O5,6000,20260201,10
+# R6: no matching original -> D/TXN both (control)
+R6,O9,1000,20260201,30
+# R7: exactly 180d (20260101->20260630) -> golden A (<=180 inclusive), start D/WIN. Pins window>=180.
+R7,O6,5000,20260630,10
+# R8: 181d (20260101->20260701) -> golden D/WIN (>180), start D/WIN. Pins window<=180 (over-extended fix fails).
+R8,O7,5000,20260701,10

@@ -1,0 +1,10 @@
+       // CDTRRC -- CDTRRF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdtrrf_rec qualified;
+         trr_result_id      char(10);
+         trr_request_id     char(10);
+         trr_card_no        char(16);
+         trr_result_cd      char(10);
+         trr_settled_amt    packed(13:2);
+         trr_return_reason  char(4);
+         trr_result_dt      packed(8:0);
+       end-ds;

@@ -1,0 +1,10 @@
+       // CDSUMC -- CDSUMF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdsumf_rec qualified;
+         sm_summary_key     char(10);
+         sm_summary_dt      packed(8:0);
+         sm_merchant_code   char(4);
+         sm_currency_cd     char(10);
+         sm_sale_count      packed(8:0);
+         sm_sale_amt        packed(13:2);
+         sm_return_amt      packed(13:2);
+       end-ds;

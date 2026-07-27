@@ -1,0 +1,11 @@
+       // CDREFDC -- CDREFDF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdrefdf_rec qualified;
+         ref_refund_id      char(10);
+         ref_card_no        char(16);
+         ref_pay_id         char(10);
+         ref_refund_amt     packed(13:2);
+         ref_bank_cd        char(10);
+         ref_account_no     char(16);
+         ref_refund_status  char(2);
+         ref_approval_id    char(10);
+       end-ds;

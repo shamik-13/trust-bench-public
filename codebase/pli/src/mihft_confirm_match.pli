@@ -1,0 +1,27 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20200512  決済一課  新規作成 (コンファーム照合)            */
+/*--------------------------------------------------------------------*/
+mihft_confirm_match: PROC OPTIONS(MAIN);
+   DCL SCCONF FILE RECORD INPUT;
+   DCL SCEXEC FILE RECORD INPUT;
+   DCL SCAUDT FILE RECORD OUTPUT;
+   %INCLUDE SCCONFC;
+   %INCLUDE SCEXECC;
+   %INCLUDE SCAUDTC;
+   DCL EOF_CONF BIT(1) INIT('0'B);
+   DCL WK_BREAK FIXED DEC(9,0) INIT(0);
+   ON ENDFILE(SCCONF) EOF_CONF = '1'B;
+   OPEN FILE(SCCONF) INPUT; OPEN FILE(SCEXEC) INPUT; OPEN FILE(SCAUDT) OUTPUT;
+   READ FILE(SCCONF) INTO(SCCONF_REC);
+   DO WHILE(^EOF_CONF);
+      /* 約定とコンファームを取引IDで突合し不一致を検出 */
+      IF CF_MATCH_KBN = 'N' THEN DO;
+         WK_BREAK = WK_BREAK + 1;
+         AU_EVENT_KBN = 'CONF_BRK'; AU_REF_ID = CF_EXEC_ID;
+         WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+      END;
+      READ FILE(SCCONF) INTO(SCCONF_REC);
+   END;
+   CLOSE FILE(SCCONF); CLOSE FILE(SCEXEC); CLOSE FILE(SCAUDT);
+END mihft_confirm_match;

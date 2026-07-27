@@ -1,0 +1,10 @@
+       // CDCAPFC -- CDCAPF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdcapf_rec qualified;
+         bc_sale_id         char(10);
+         bc_card_no         char(16);
+         bc_billed_amt      packed(13:2);
+         bc_fee_amt         packed(13:2);
+         bc_currency_cd     char(10);
+         bc_cap_status      char(2);
+         bc_program_id      char(10);
+       end-ds;

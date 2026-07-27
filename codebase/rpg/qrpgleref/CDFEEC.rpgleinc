@@ -1,0 +1,10 @@
+       // CDFEEC -- CDFEEF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdfeef_rec qualified;
+         fe_fee_id          char(10);
+         fe_card_no         char(16);
+         fe_fee_dt          packed(8:0);
+         fe_fee_amt         packed(13:2);
+         fe_fee_type        char(2);
+         fe_bill_cycle_cd   char(10);
+         fe_post_status     char(2);
+       end-ds;

@@ -1,0 +1,21 @@
+{
+  "_comment": "S6 cycle-boundary/holiday behavioral fixture. KZ905B calls KZ900S per cycle-end. On a holiday cycle-end the GOLDEN rolls BACKWARD to the previous business day (D-1202, tribal); the START rolls FORWARD to the next business day. The calendar lists EXACTLY the dates KZ900S steps through (so indexed reads never miss). expect_* are GOLDEN expectations. C02/C03 are holidays (discriminate); C01/C04 are business days (controls).",
+  "calendar": [
+    {"date": 20260529, "holiday": "N"},
+    {"date": 20260530, "holiday": "Y"},
+    {"date": 20260531, "holiday": "Y"},
+    {"date": 20260601, "holiday": "N"},
+    {"date": 20260630, "holiday": "N"},
+    {"date": 20260930, "holiday": "N"},
+    {"date": 20261230, "holiday": "N"},
+    {"date": 20261231, "holiday": "Y"},
+    {"date": 20270101, "holiday": "Y"},
+    {"date": 20270102, "holiday": "N"}
+  ],
+  "cycles": [
+    {"cycle": "C01", "nominal": 20260630, "expect_resolved": 20260630, "expect_rolled": "N"},
+    {"cycle": "C02", "nominal": 20260531, "expect_resolved": 20260529, "expect_rolled": "Y"},
+    {"cycle": "C03", "nominal": 20261231, "expect_resolved": 20261230, "expect_rolled": "Y"},
+    {"cycle": "C04", "nominal": 20260930, "expect_resolved": 20260930, "expect_rolled": "N"}
+  ]
+}

@@ -1,0 +1,8 @@
+       // CDCARDFC -- CDCARDF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdcardf_rec qualified;
+         cf_card_no         char(16);
+         cf_member_id       char(10);
+         cf_card_status     char(2);
+         cf_credit_limit    packed(13:2);
+         cf_member_name_kana char(40);
+       end-ds;

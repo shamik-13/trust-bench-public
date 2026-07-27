@@ -1,0 +1,9 @@
+       // CDPNTFC -- CDPNTF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdpntf_rec qualified;
+         pn_card_no         char(16);
+         pn_point_bal       packed(13:2);
+         pn_point_earned    char(10);
+         pn_point_adj       char(10);
+         pn_last_earn_dt    packed(8:0);
+         pn_program_id      char(10);
+       end-ds;

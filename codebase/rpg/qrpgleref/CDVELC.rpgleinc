@@ -1,0 +1,9 @@
+       // CDVELC -- CDVELF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdvelf_rec qualified;
+         vl_card_no         char(16);
+         vl_window_start_ts char(14);
+         vl_auth_count_10m  char(10);
+         vl_auth_amt_1h     char(10);
+         vl_last_auth_ts    char(14);
+         vl_velocity_flag   char(1);
+       end-ds;

@@ -1,0 +1,10 @@
+       // CDHISTC -- CDHISTF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdhistf_rec qualified;
+         his_card_no        char(16);
+         his_pay_id         char(10);
+         his_event_seq      char(10);
+         his_event_type     char(2);
+         his_event_amt      packed(13:2);
+         his_event_dt       packed(8:0);
+         his_source_program char(10);
+       end-ds;

@@ -1,0 +1,26 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20200615  決済一課  新規作成 (決済フィード受付ゲート)      */
+/*--------------------------------------------------------------------*/
+mihft_settle_feed_gate: PROC OPTIONS(MAIN);
+   DCL SCEXEC FILE RECORD INPUT;
+   DCL SCAUDT FILE RECORD OUTPUT;
+   %INCLUDE SCEXECC;
+   %INCLUDE SCAUDTC;
+   DCL EOF_EXEC BIT(1) INIT('0'B);
+   DCL WK_OK FIXED DEC(9,0) INIT(0);
+   DCL WK_NG FIXED DEC(9,0) INIT(0);
+   ON ENDFILE(SCEXEC) EOF_EXEC = '1'B;
+   OPEN FILE(SCEXEC) INPUT; OPEN FILE(SCAUDT) OUTPUT;
+   READ FILE(SCEXEC) INTO(SCEXEC_REC);
+   DO WHILE(^EOF_EXEC);
+      /* 約定フィードの形式・必須項目を検査し、後続決済処理へ受付/排除 */
+      IF EX_EXEC_ID = ' ' | EX_FILL_QTY <= 0 THEN DO;
+         WK_NG = WK_NG + 1;
+         AU_EVENT_KBN = 'FEED_NG'; AU_REF_ID = EX_ORDER_ID;
+         WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+      END; ELSE WK_OK = WK_OK + 1;
+      READ FILE(SCEXEC) INTO(SCEXEC_REC);
+   END;
+   CLOSE FILE(SCEXEC); CLOSE FILE(SCAUDT);
+END mihft_settle_feed_gate;

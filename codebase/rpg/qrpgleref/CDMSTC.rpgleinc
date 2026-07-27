@@ -1,0 +1,8 @@
+       // CDMSTC -- CDMEMSTATF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdmemstatf_rec qualified;
+         ms_member_id       char(10);
+         ms_status_cd       char(10);
+         ms_status_reason   char(4);
+         ms_effective_dt    packed(8:0);
+         ms_last_updated_ts char(14);
+       end-ds;

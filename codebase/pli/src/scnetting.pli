@@ -1,0 +1,250 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数    年月日      担当      概要                              */
+/*    01.00   1998/04/01  中川 美和 (E-283)      新規作成                          */
+/*    01.01   1999/10/12  村上 健司 (E-301)      DVP/CASH 区分追加                 */
+/*    01.02   2001/05/21  西村 亮 (E-204)      名寄せキーに部店を追加            */
+/*    01.03   2004/02/16  福田 亮太 (E-211)      フェイル約定の除外                */
+/*    01.04   2006/09/08  福田 亮太 (E-211)      金額桁拡張                        */
+/*--------------------------------------------------------------------*/
+/*  みらい証券  決済系                                                */
+/*  scnetting  名寄せ・ネッティング                                    */
+/*  約定明細を顧客・銘柄・売買・約定日単位に集約し、決済指図作成前の   */
+/*  ネット済ポジションを出力する。受渡日計算は scsettle で実施する。   */
+/*--------------------------------------------------------------------*/
+
+scnetting: PROC OPTIONS(MAIN);
+
+   DCL SYSIN    FILE INPUT  RECORD SEQUENTIAL;
+   DCL SYSPRINT FILE OUTPUT PRINT;
+   DCL SCEXECF  FILE INPUT  RECORD SEQUENTIAL;
+   DCL SCNETF   FILE OUTPUT RECORD SEQUENTIAL;
+   DCL SCREJF   FILE OUTPUT RECORD SEQUENTIAL;
+
+   %INCLUDE SCEXECC;
+   %INCLUDE SCNETPC;
+
+   DCL 01 REJOUT,
+         05 RJ_EXEC_ID         CHAR(10),
+         05 RJ_CIF_NO          CHAR(16),
+         05 RJ_INSTR_CODE      CHAR(04),
+         05 RJ_TRADE_DT        CHAR(8),
+         05 RJ_REASON_CD       CHAR(3),
+         05 RJ_REASON_TEXT     CHAR(60);
+
+   DCL  EOF_SW                 BIT(1) INIT('0'B);
+   DCL  ERR_SW                 BIT(1) INIT('0'B);
+   DCL  FIRST_SW               BIT(1) INIT('1'B);
+   DCL  REJ_SW                 BIT(1) INIT('0'B);
+
+   DCL  WK_PGM_ID              CHAR(8)  INIT('SCNETING');
+   DCL  WK_MSG                 CHAR(80);
+   DCL  WK_REASON              CHAR(3);
+
+   DCL  WK_IN_CNT              FIXED DEC(9) INIT(0);
+   DCL  WK_OUT_CNT             FIXED DEC(9) INIT(0);
+   DCL  WK_REJ_CNT             FIXED DEC(9) INIT(0);
+   DCL  WK_GRP_CNT             FIXED DEC(5) INIT(0);
+   DCL  WK_NET_SEQ             FIXED DEC(9) INIT(0);
+
+   DCL  WK_KEY                 CHAR(30);
+   DCL  SV_KEY                 CHAR(30);
+   DCL  WK_SIGN                FIXED DEC(1);
+
+   DCL  WK_TRADE_DT_C          CHAR(8);
+
+   DCL  SV_CIF_NO              CHAR(16);
+   DCL  SV_INSTR_CODE          CHAR(04);
+   DCL  SV_SIDE_KBN            CHAR(02);
+   DCL  SV_TRADE_DT            FIXED DEC(8,0);
+
+   DCL  SUM_QTY                FIXED DEC(13,0) INIT(0);
+   DCL  SUM_AMT                FIXED DEC(15,2) INIT(0);
+   DCL  SUM_BUY_AMT            FIXED DEC(15,2) INIT(0);
+   DCL  SUM_SELL_AMT           FIXED DEC(15,2) INIT(0);
+
+   DCL  WK_QTY                 FIXED DEC(13,0);
+   DCL  WK_AMT                 FIXED DEC(15,2);
+
+   DCL  WK_NET_SEQ_C           CHAR(9);
+
+   DCL  SUBSTR                 BUILTIN;
+   DCL  VERIFY                 BUILTIN;
+   DCL  LENGTH                 BUILTIN;
+   DCL  EDIT                   BUILTIN;
+   DCL  DATE                   BUILTIN;
+
+   ON ENDFILE(SCEXECF)
+      EOF_SW = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      PUT FILE(SYSPRINT) SKIP
+          EDIT('*** SCNETTING 異常終了  入力件数=', WK_IN_CNT)
+          (A, F(9));
+      GO TO ABEND_RTN;
+   END;
+
+   PUT FILE(SYSPRINT) SKIP
+       EDIT('SCNETTING 開始 ', DATE()) (A, A);
+
+   OPEN FILE(SCEXECF) INPUT;
+   OPEN FILE(SCNETF)  OUTPUT;
+   OPEN FILE(SCREJF)  OUTPUT;
+
+   READ FILE(SCEXECF) INTO(SCEXEC_REC);
+
+   DO WHILE(EOF_SW = '0'B);
+
+      WK_IN_CNT = WK_IN_CNT + 1;
+      REJ_SW = '0'B;
+      WK_REASON = '   ';
+
+      CALL_VALIDATE:
+      DO;
+         IF EX_CIF_NO = '' THEN DO;
+            REJ_SW = '1'B;
+            WK_REASON = '101';
+         END;
+         ELSE IF EX_INSTR_CODE = '' THEN DO;
+            REJ_SW = '1'B;
+            WK_REASON = '102';
+         END;
+         ELSE IF EX_SIDE_KBN ^= 'B' &
+                 EX_SIDE_KBN ^= 'S' THEN DO;
+            REJ_SW = '1'B;
+            WK_REASON = '104';
+         END;
+         ELSE IF EX_TRADE_DT <= 0 THEN DO;
+            REJ_SW = '1'B;
+            WK_REASON = '106';
+         END;
+         ELSE IF EX_FILL_QTY <= 0 |
+                 EX_FILL_AMT <  0 THEN DO;
+            REJ_SW = '1'B;
+            WK_REASON = '107';
+         END;
+      END CALL_VALIDATE;
+
+      IF REJ_SW = '1'B THEN DO;
+         WK_TRADE_DT_C  = EDIT(EX_TRADE_DT, '99999999');
+         RJ_EXEC_ID     = EX_EXEC_ID;
+         RJ_CIF_NO      = EX_CIF_NO;
+         RJ_INSTR_CODE  = EX_INSTR_CODE;
+         RJ_TRADE_DT    = WK_TRADE_DT_C;
+         RJ_REASON_CD   = WK_REASON;
+
+         SELECT(WK_REASON);
+            WHEN('101') RJ_REASON_TEXT = '顧客番号未設定';
+            WHEN('102') RJ_REASON_TEXT = '銘柄コード未設定';
+            WHEN('104') RJ_REASON_TEXT = '売買区分不正';
+            WHEN('106') RJ_REASON_TEXT = '約定日不正';
+            WHEN('107') RJ_REASON_TEXT = '数量または金額不正';
+            OTHERWISE   RJ_REASON_TEXT = '入力内容不正';
+         END;
+
+         WRITE FILE(SCREJF) FROM(REJOUT);
+         WK_REJ_CNT = WK_REJ_CNT + 1;
+      END;
+      ELSE DO;
+
+         WK_TRADE_DT_C = EDIT(EX_TRADE_DT, '99999999');
+         WK_KEY = EX_CIF_NO || EX_INSTR_CODE ||
+                  EX_SIDE_KBN || WK_TRADE_DT_C;
+
+         IF FIRST_SW = '1'B THEN DO;
+            FIRST_SW = '0'B;
+            CALL INIT_GROUP;
+         END;
+         ELSE IF WK_KEY ^= SV_KEY THEN DO;
+            CALL WRITE_GROUP;
+            CALL INIT_GROUP;
+         END;
+
+         WK_QTY = EX_FILL_QTY;
+         WK_AMT = EX_FILL_AMT;
+
+         IF EX_SIDE_KBN = 'B' THEN DO;
+            WK_SIGN = 1;
+            SUM_BUY_AMT = SUM_BUY_AMT + WK_AMT;
+         END;
+         ELSE DO;
+            WK_SIGN = -1;
+            SUM_SELL_AMT = SUM_SELL_AMT + WK_AMT;
+         END;
+
+         SUM_QTY = SUM_QTY + (WK_QTY * WK_SIGN);
+         SUM_AMT = SUM_AMT + (WK_AMT * WK_SIGN);
+         WK_GRP_CNT = WK_GRP_CNT + 1;
+      END;
+
+      READ FILE(SCEXECF) INTO(SCEXEC_REC);
+
+   END;
+
+   IF FIRST_SW = '0'B THEN
+      CALL WRITE_GROUP;
+
+   CLOSE FILE(SCEXECF);
+   CLOSE FILE(SCNETF);
+   CLOSE FILE(SCREJF);
+
+   PUT FILE(SYSPRINT) SKIP
+       EDIT('SCNETTING 正常終了  入力=', WK_IN_CNT,
+            ' 出力=', WK_OUT_CNT,
+            ' 除外=', WK_REJ_CNT)
+       (A, F(9), A, F(9), A, F(9));
+
+   RETURN;
+
+INIT_GROUP: PROC;
+
+   SV_KEY        = WK_KEY;
+   SV_CIF_NO     = EX_CIF_NO;
+   SV_INSTR_CODE = EX_INSTR_CODE;
+   SV_SIDE_KBN   = EX_SIDE_KBN;
+   SV_TRADE_DT   = EX_TRADE_DT;
+
+   SUM_QTY       = 0;
+   SUM_AMT       = 0;
+   SUM_BUY_AMT   = 0;
+   SUM_SELL_AMT  = 0;
+   WK_GRP_CNT    = 0;
+
+END INIT_GROUP;
+
+WRITE_GROUP: PROC;
+
+   WK_NET_SEQ   = WK_NET_SEQ + 1;
+   WK_NET_SEQ_C = EDIT(WK_NET_SEQ, '999999999');
+
+   NP_NET_KEY    = 'NP' || SUBSTR(WK_NET_SEQ_C,3,8);
+   NP_CIF_NO     = SV_CIF_NO;
+   NP_INSTR_CODE = SV_INSTR_CODE;
+   NP_SETL_DT    = SV_TRADE_DT;
+   NP_NET_QTY    = SUM_QTY;
+   NP_NET_AMT    = SUM_AMT;
+   NP_BUY_AMT    = SUM_BUY_AMT;
+   NP_SELL_AMT   = SUM_SELL_AMT;
+   NP_NET_KBN    = SV_SIDE_KBN;
+   NP_STATUS_KBN = 'P';
+
+   WRITE FILE(SCNETF) FROM(SCNETP_REC);
+   WK_OUT_CNT = WK_OUT_CNT + 1;
+
+END WRITE_GROUP;
+
+ABEND_RTN:
+   DO;
+      PUT FILE(SYSPRINT) SKIP
+          EDIT('SCNETTING 中断  入力=', WK_IN_CNT,
+               ' 出力=', WK_OUT_CNT,
+               ' 除外=', WK_REJ_CNT)
+          (A, F(9), A, F(9), A, F(9));
+
+      CLOSE FILE(SCEXECF);
+      CLOSE FILE(SCNETF);
+      CLOSE FILE(SCREJF);
+   END;
+
+END scnetting;

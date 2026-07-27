@@ -1,0 +1,15 @@
+{
+  "_comment": "S8 interest-accrual behavioral fixture. KZ410B reads KZDBALF (avg daily balance + annual rate + period start) and KZCYRF (cycle basis dates), writes KZINTF (truncated-yen accrued interest). GOLDEN uses ACTUAL/365 (D-1403, source-invisible) accruing to the holiday-ROLLED basis date CR-RESOLVED-DT (D-1402, cross-modal→S6). START uses 30/360 accruing to the nominal month-end. The grader recomputes the expected GOLDEN interest from this fixture (resolved date + actual/365), independent of the golden code. C01 is a business-day cycle (nominal==resolved): those accounts isolate the day-count axis. C02 is a HOLIDAY cycle (nominal 0531 rolled back to 0530): those accounts additionally require the rolled basis date. START differs on every account.",
+  "cycles": [
+    {"cycle": "C01", "nominal": 20250331, "resolved": 20250331, "rolled": "N"},
+    {"cycle": "C02", "nominal": 20250531, "resolved": 20250530, "rolled": "Y"}
+  ],
+  "accounts": [
+    {"acct": "0000000000000001", "cycle": "C01", "bal": 10000000.00, "rate": 0.0150, "start": 20250301, "axis": "day-count (business-day cycle)"},
+    {"acct": "0000000000000002", "cycle": "C01", "bal": 25000000.00, "rate": 0.0080, "start": 20250101, "axis": "day-count (business-day cycle)"},
+    {"acct": "0000000000000005", "cycle": "C01", "bal":  5000000.00, "rate": 0.0200, "start": 20250301, "axis": "day-count (business-day cycle)"},
+    {"acct": "0000000000000003", "cycle": "C02", "bal": 10000000.00, "rate": 0.0150, "start": 20250501, "axis": "day-count + rolled basis date (holiday cycle)"},
+    {"acct": "0000000000000004", "cycle": "C02", "bal": 40000000.00, "rate": 0.0050, "start": 20250401, "axis": "day-count + rolled basis date (holiday cycle)"},
+    {"acct": "0000000000000006", "cycle": "C02", "bal": 12000000.00, "rate": 0.0100, "start": 20250501, "axis": "day-count + rolled basis date (holiday cycle)"}
+  ]
+}

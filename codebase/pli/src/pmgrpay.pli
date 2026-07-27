@@ -1,0 +1,207 @@
+/*  ============================================================  */
+/*  プログラムID: PMGRPAY                                         */
+/*  プログラム名: 団体一括収納照合バッチ                           */
+/*  概      要: 団体雇主の一括送金ファイルを読込み、同一団体    */
+/*           コード配下の複数契約の請求情報を纏めて処理する    */
+/*           バッチプログラム。送金額を請求残高の早期                */
+/*           確定分より優先順に充当する。                         */
+/*  ============================================================  */
+/*                                                                */
+/*  変更履歴:                                                     */
+/*  版数  作成日    更新者      概要                               */
+/*  1.0   2025/04  加藤達也    新規作成                           */
+/*  ============================================================  */
+
+PMGRPAY: PROC OPTIONS(MAIN);
+
+ DCL 1 WK-HEADER,
+      2 WK-SEQ              PIC '9(8)',
+      2 WK-PROCESS-DT       CHAR(8),
+      2 WK-GROUP-CD         CHAR(6),
+      2 WK-REMIT-AMT        FIXED DECIMAL(15,2),
+      2 WK-ALLOC-CNT        FIXED BINARY(31),
+      2 WK-ERROR-FLG        CHAR(1);
+
+ DCL 1 WK-CONTRACT-WORK,
+      2 WK-CON-NO           CHAR(10),
+      2 WK-CON-STATUS       CHAR(2),
+      2 WK-ACCT-CD          CHAR(4);
+
+ DCL 1 WK-DEMAND-WORK,
+      2 WK-BILL-SEQ         FIXED BINARY(31),
+      2 WK-BILL-AMT         FIXED DECIMAL(15,2),
+      2 WK-DUE-DT           CHAR(8),
+      2 WK-REMIT-REM        FIXED DECIMAL(15,2),
+      2 WK-ALLOC-AMT        FIXED DECIMAL(15,2);
+
+ DCL 1 WK-DEMAND-TBL(9999),
+      2 TBL-BILL-SEQ        FIXED BINARY(31),
+      2 TBL-CON-NO          CHAR(10),
+      2 TBL-BILL-AMT        FIXED DECIMAL(15,2),
+      2 TBL-DUE-DT          CHAR(8),
+      2 TBL-PAID-KBN        CHAR(1);
+
+ DCL WK-DEMAND-CNT         FIXED BINARY(31) INIT(0);
+ DCL WK-IDX                FIXED BINARY(31);
+ DCL WK-SORT-IDX           FIXED BINARY(31);
+ DCL WK-SORT-IDX2          FIXED BINARY(31);
+ DCL WK-TEMP-WORK          LIKE WK-DEMAND-TBL;
+ DCL WK-GRP-REF-NO         CHAR(14);
+ DCL WK-GRP-REF-SEQ        FIXED DECIMAL(9,0) INIT(0);
+ DCL WK-REMAINING-AMT      FIXED DECIMAL(15,2);
+ DCL WK-PAY-REC-CNT        FIXED BINARY(31) INIT(0);
+ DCL WK-ENDFILE-FLG        CHAR(1) INIT('N');
+
+ %INCLUDE LFCONFC;
+ %INCLUDE LFBILFC;
+ %INCLUDE LFPAYF2C;
+ %INCLUDE LFAUDLC;
+
+ DCL LFCONFIN FILE RECORD INPUT;
+ DCL LFBULFIN FILE RECORD INPUT;
+ DCL LFPAYOUT FILE RECORD OUTPUT;
+ DCL LFAUDOUT FILE RECORD OUTPUT;
+ DCL GRPREMIT  FILE RECORD INPUT;
+
+ ON ENDFILE(GRPREMIT)
+   BEGIN;
+     WK-ENDFILE-FLG = 'Y';
+   END;
+
+ ON ERROR
+   BEGIN;
+     WK-ERROR-FLG = 'Y';
+     PUT EDIT('**エラー: ファイル処理エラーが発生しました')
+         (A);
+   END;
+
+ OPEN FILE(GRPREMIT) INPUT;
+ OPEN FILE(LFCONFIN) INPUT;
+ OPEN FILE(LFBULFIN) INPUT;
+ OPEN FILE(LFPAYOUT) OUTPUT;
+ OPEN FILE(LFAUDOUT) OUTPUT;
+
+ DO WHILE(WK-ENDFILE-FLG = 'N');
+   READ FILE(GRPREMIT) INTO WK-HEADER;
+
+   IF WK-ERROR-FLG = 'Y' THEN
+     GO TO BATCH-END;
+
+   WK-ALLOC-CNT = 0;
+   WK-DEMAND-CNT = 0;
+   WK-REMAINING-AMT = WK-REMIT-AMT;
+   WK-GRP-REF-SEQ = WK-GRP-REF-SEQ + 1;
+
+   /*  団体コードマッチする契約を抽出  */
+   DO WHILE('1' = '1');
+     READ FILE(LFCONFIN) INTO LFCONF;
+     IF WK-ERROR-FLG = 'Y' THEN LEAVE;
+
+     IF LFCONF-GROUP-CD = WK-GROUP-CD THEN
+     DO;
+       WK-CON-NO = LFCONF-CON-NO;
+       WK-CON-STATUS = LFCONF-CON-STATUS-KBN;
+
+       /*  有効契約のみ処理対象  */
+       IF WK-CON-STATUS = '01' THEN
+       DO;
+         /*  当該契約の未決済請求を抽出  */
+         DO WHILE('1' = '1');
+           READ FILE(LFBULFIN) INTO LFBILF;
+           IF WK-ERROR-FLG = 'Y' THEN LEAVE;
+
+           IF LFBILF-CON-NO = WK-CON-NO AND
+              LFBILF-PAID-KBN = '0' THEN
+           DO;
+             WK-DEMAND-CNT = WK-DEMAND-CNT + 1;
+
+             IF WK-DEMAND-CNT <= 9999 THEN
+             DO;
+               TBL-BILL-SEQ(WK-DEMAND-CNT) = LFBILF-BILL-SEQ;
+               TBL-CON-NO(WK-DEMAND-CNT) = LFBILF-CON-NO;
+               TBL-BILL-AMT(WK-DEMAND-CNT) = LFBILF-BILL-AMT;
+               TBL-DUE-DT(WK-DEMAND-CNT) = LFBILF-DUE-DT;
+               TBL-PAID-KBN(WK-DEMAND-CNT) = '0';
+             END;
+           END;
+         END;
+       END;
+     END;
+   END;
+
+   /*  請求テーブルを支払期日でソート  */
+   DO WK-SORT-IDX = 1 TO WK-DEMAND-CNT - 1;
+     DO WK-SORT-IDX2 = WK-SORT-IDX + 1 TO WK-DEMAND-CNT;
+       IF TBL-DUE-DT(WK-SORT-IDX) >
+          TBL-DUE-DT(WK-SORT-IDX2) THEN
+       DO;
+         WK-TEMP-WORK = WK-DEMAND-TBL(WK-SORT-IDX);
+         WK-DEMAND-TBL(WK-SORT-IDX) =
+           WK-DEMAND-TBL(WK-SORT-IDX2);
+         WK-DEMAND-TBL(WK-SORT-IDX2) = WK-TEMP-WORK;
+       END;
+     END;
+   END;
+
+   /*  送金額を順次充当  */
+   DO WK-IDX = 1 TO WK-DEMAND-CNT;
+     IF WK-REMAINING-AMT <= 0 THEN LEAVE;
+
+     IF TBL-BILL-AMT(WK-IDX) <= WK-REMAINING-AMT THEN
+     DO;
+       /*  請求額全額充当  */
+       WK-ALLOC-AMT = TBL-BILL-AMT(WK-IDX);
+     END;
+     ELSE
+     DO;
+       /*  送金額の残が充当額  */
+       WK-ALLOC-AMT = WK-REMAINING-AMT;
+     END;
+
+     /*  入金レコード出力  */
+     LFPAYF2-CON-NO = TBL-CON-NO(WK-IDX);
+     LFPAYF2-BILL-SEQ = TBL-BILL-SEQ(WK-IDX);
+     LFPAYF2-ALLOC-AMT = WK-ALLOC-AMT;
+     LFPAYF2-PAY-OPE-KBN = 'GS';
+     LFPAYF2-GRP-REF-NO = WK-GRP-REF-NO;
+     LFPAYF2-INPUT-DT = WK-PROCESS-DT;
+
+     WRITE FILE(LFPAYOUT) FROM LFPAYF2;
+
+     WK-REMAINING-AMT = WK-REMAINING-AMT - WK-ALLOC-AMT;
+     WK-ALLOC-CNT = WK-ALLOC-CNT + 1;
+     WK-PAY-REC-CNT = WK-PAY-REC-CNT + 1;
+
+     TBL-PAID-KBN(WK-IDX) = '1';
+   END;
+
+   /*  団体決済監査レコード出力  */
+   LFAUDL-GROUP-CD = WK-GROUP-CD;
+   LFAUDL-GRP-REF-NO = WK-GRP-REF-NO;
+   LFAUDL-OPE-TYPE-KBN = 'GS';
+   LFAUDL-ALLOC-CNT = WK-ALLOC-CNT;
+   LFAUDL-TOTAL-ALLOC-AMT = WK-REMIT-AMT - WK-REMAINING-AMT;
+   LFAUDL-UNALLOC-AMT = WK-REMAINING-AMT;
+   LFAUDL-PROCESS-DT = WK-PROCESS-DT;
+
+   WRITE FILE(LFAUDOUT) FROM LFAUDL;
+
+   IF WK-ENDFILE-FLG = 'Y' THEN LEAVE;
+ END;
+
+ BATCH-END:
+
+ CLOSE FILE(GRPREMIT);
+ CLOSE FILE(LFCONFIN);
+ CLOSE FILE(LFBULFIN);
+ CLOSE FILE(LFPAYOUT);
+ CLOSE FILE(LFAUDOUT);
+
+ IF WK-ERROR-FLG = 'N' THEN
+   PUT EDIT('処理完了: ', WK-PAY-REC-CNT, ' 件の入金レコード出力')
+       (A, F(5), A);
+ ELSE
+   PUT EDIT('処理異常終了')
+       (A);
+
+END PMGRPAY;

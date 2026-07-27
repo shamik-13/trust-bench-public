@@ -1,0 +1,8 @@
+       // CDSTSC -- CDSTSF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdstsf_rec qualified;
+         st_card_no         char(16);
+         st_new_status      char(2);
+         st_source_sys      char(10);
+         st_status_ts       char(14);
+         st_reason_cd       char(10);
+       end-ds;

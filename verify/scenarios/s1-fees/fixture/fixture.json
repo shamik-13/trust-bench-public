@@ -1,0 +1,19 @@
+{
+  "_comment": "Single-source fee-engine fixture. Rates mirror contracts.yaml data_domain (rate_old=改定前, rate_current=改定後). Accounts are designed to discriminate each decision: see `tests`. CREDIT-LIMIT + OVER-AMT = CYCLE-BAL so the driver's MAX(0,bal-limit) yields OVER-AMT either way. Amounts in whole yen (sen = 00).",
+  "dgroups": [
+    {"code": "STD0", "rate_old": "0.0150", "rate_current": "0.0180", "exempt": "N"},
+    {"code": "GLD1", "rate_old": "0.0100", "rate_current": "0.0120", "exempt": "N"},
+    {"code": "PLT2", "rate_old": "0.0080", "rate_current": "0.0090", "exempt": "N"},
+    {"code": "EXMP", "rate_old": "0.0000", "rate_current": "0.0000", "exempt": "Y"},
+    {"code": "PREM", "rate_old": "0.0080", "rate_current": "0.0090", "exempt": "N"}
+  ],
+  "accounts": [
+    {"acct": "ACCT000001", "card": "5000000000000001", "group": "STD0", "credit_limit": 100000, "over_amt": 200000, "kyc": "A"},
+    {"acct": "ACCT000002", "card": "5000000000000002", "group": "PREM", "credit_limit": 100000, "over_amt": 200000, "kyc": "A"},
+    {"acct": "ACCT000003", "card": "5000000000000003", "group": "STD0", "credit_limit": 100000, "over_amt": 5000000, "kyc": "A"},
+    {"acct": "ACCT000004", "card": "5000000000000004", "group": "EXMP", "credit_limit": 100000, "over_amt": 200000, "kyc": "A"},
+    {"acct": "ACCT000005", "card": "5000000000000005", "group": "GLD1", "credit_limit": 100000, "over_amt": 100000, "kyc": "A"},
+    {"acct": "ACCT000006", "card": "5000000000000006", "group": "STD0", "credit_limit": 100000, "over_amt": 100050, "kyc": "A"}
+  ],
+  "cap_yen": 50000
+}

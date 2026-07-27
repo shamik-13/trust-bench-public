@@ -1,0 +1,11 @@
+{
+  "_comment": "解約返戻金計算 behavioral fixture (D-2901). 解約控除 = NEWBIZ-COST × max(0,M-elapsed)/M where M=120 (GOLDEN) vs M=60 (START); 解約返戻金 = max(0, RESERVE - 解約控除), 円未満切捨て. R1..R3 have elapsed<120 (R3 elapsed 72 is >60 but <120) -> the un-amortised charge differs between the 120 and 60 bases -> CV differs (DISCRIMINATE). R4 (elapsed 6, cost>reserve) floors to CV 0 in BOTH arms (control). R5 (elapsed 130) is fully amortised -> charge 0, CV=RESERVE in both (control). R6 (status 08) is 対象外(S) in both. expect_cv are GOLDEN values. Amounts are yen; gen_text scales x100 into the COMP-3 fields.",
+  "policies": [
+    {"pol_no": "LP00000000010001", "reserve": 500000,  "cost": 200000, "elapsed": 12,  "status": "01", "expect_cv": 320000, "expect_status": "C"},
+    {"pol_no": "LP00000000010002", "reserve": 800000,  "cost": 300000, "elapsed": 36,  "status": "01", "expect_cv": 590000, "expect_status": "C"},
+    {"pol_no": "LP00000000010003", "reserve": 1000000, "cost": 240000, "elapsed": 72,  "status": "01", "expect_cv": 904000, "expect_status": "C"},
+    {"pol_no": "LP00000000010004", "reserve": 300000,  "cost": 360000, "elapsed": 6,   "status": "01", "expect_cv": 0,      "expect_status": "C"},
+    {"pol_no": "LP00000000010005", "reserve": 600000,  "cost": 150000, "elapsed": 130, "status": "01", "expect_cv": 600000, "expect_status": "C"},
+    {"pol_no": "LP00000000010006", "reserve": 400000,  "cost": 100000, "elapsed": 24,  "status": "08", "expect_cv": 0,      "expect_status": "S"}
+  ]
+}

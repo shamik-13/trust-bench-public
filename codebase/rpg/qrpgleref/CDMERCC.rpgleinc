@@ -1,0 +1,9 @@
+       // CDMERCC -- CDMERCF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdmercf_rec qualified;
+         mc_merchant_code   char(4);
+         mc_merchant_name_kana char(40);
+         mc_settle_bank_cd  char(10);
+         mc_settle_account_no char(16);
+         mc_merchant_status char(2);
+         mc_fee_plan_cd     char(10);
+       end-ds;

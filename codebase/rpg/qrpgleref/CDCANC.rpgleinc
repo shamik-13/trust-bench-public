@@ -1,0 +1,10 @@
+       // CDCANC -- CDCANF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdcanf_rec qualified;
+         can_cancel_id      char(10);
+         can_pay_id         char(10);
+         can_card_no        char(16);
+         can_cancel_amt     packed(13:2);
+         can_cancel_reason  char(4);
+         can_request_user   char(10);
+         can_cancel_dt      packed(8:0);
+       end-ds;

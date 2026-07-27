@@ -1,0 +1,8 @@
+       // CDMVWFC -- CDMVWF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdmvwf_rec qualified;
+         mv_card_no         char(16);
+         mv_txn_id          char(10);
+         mv_disp_kbn        char(2);
+         mv_disp_amt        packed(13:2);
+         mv_disp_label      char(10);
+       end-ds;

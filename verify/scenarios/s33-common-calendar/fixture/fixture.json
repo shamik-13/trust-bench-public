@@ -1,0 +1,32 @@
+{
+  "_comment": "資金集中受渡日確定 behavioral fixture (D-3301). value-date = 翌々営業日 (2営業日後, GOLDEN) vs 翌営業日 (1営業日後, START), counting only 営業日 (CL-HOLIDAY-FLAG='N') in the group calendar. All 5 processable rows DISCRIMINATE (golden != start). Row 6 (status 09) is 対象外(S) in both -> control. expect_value_dt are GOLDEN values. Calendar spans 2026-04-24..2026-05-12 with weekends + GW holidays (4/29, 5/3-5/6) flagged 休業日.",
+  "calendar": [
+    {"dt": "20260424", "flag": "N"},
+    {"dt": "20260425", "flag": "Y"},
+    {"dt": "20260426", "flag": "Y"},
+    {"dt": "20260427", "flag": "N"},
+    {"dt": "20260428", "flag": "N"},
+    {"dt": "20260429", "flag": "Y"},
+    {"dt": "20260430", "flag": "N"},
+    {"dt": "20260501", "flag": "N"},
+    {"dt": "20260502", "flag": "Y"},
+    {"dt": "20260503", "flag": "Y"},
+    {"dt": "20260504", "flag": "Y"},
+    {"dt": "20260505", "flag": "Y"},
+    {"dt": "20260506", "flag": "Y"},
+    {"dt": "20260507", "flag": "N"},
+    {"dt": "20260508", "flag": "N"},
+    {"dt": "20260509", "flag": "Y"},
+    {"dt": "20260510", "flag": "Y"},
+    {"dt": "20260511", "flag": "N"},
+    {"dt": "20260512", "flag": "N"}
+  ],
+  "instructions": [
+    {"fct_id": "FCT0001", "trigger": "20260427", "amt": 5000000,  "status": "01", "expect_value_dt": "20260430", "expect_status": "V"},
+    {"fct_id": "FCT0002", "trigger": "20260428", "amt": 12000000, "status": "01", "expect_value_dt": "20260501", "expect_status": "V"},
+    {"fct_id": "FCT0003", "trigger": "20260430", "amt": 3500000,  "status": "01", "expect_value_dt": "20260507", "expect_status": "V"},
+    {"fct_id": "FCT0004", "trigger": "20260501", "amt": 9800000,  "status": "01", "expect_value_dt": "20260508", "expect_status": "V"},
+    {"fct_id": "FCT0005", "trigger": "20260507", "amt": 1500000,  "status": "01", "expect_value_dt": "20260511", "expect_status": "V"},
+    {"fct_id": "FCT0006", "trigger": "20260428", "amt": 2000000,  "status": "09", "expect_value_dt": "0",        "expect_status": "S"}
+  ]
+}

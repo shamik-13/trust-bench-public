@@ -1,0 +1,146 @@
+/*--------------------------------------------------------------------*/
+/*  契約マスタ保全・失効判定バッチ  lf_polmaster                       */
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20180920   保全一課   初版作成                           */
+/*  01.01    20200401   保全一課   払込猶予期間判定追加               */
+/*  01.02    20220701   保全二課   うるう年対応・末日判定見直し       */
+/*  01.03    20240515   保全二課   稟議-L06-072 失効判定対応  */
+/*--------------------------------------------------------------------*/
+
+lf_polmaster: PROC OPTIONS(MAIN);
+
+   DCL LFCONF  FILE RECORD INPUT;
+   DCL LFLAPF  FILE RECORD OUTPUT;
+
+   %INCLUDE LFCONFC;
+   %INCLUDE LFLAPFC;
+
+   DCL EOF_CON         BIT(1) INIT('0'B);
+   DCL SW_ERR          BIT(1) INIT('0'B);
+
+   DCL WK_CON_CNT      FIXED DEC(9,0) INIT(0);
+   DCL WK_LAPSE_CNT    FIXED DEC(9,0) INIT(0);
+   DCL WK_GRACE_CNT    FIXED DEC(9,0) INIT(0);
+   DCL WK_ERR_CNT      FIXED DEC(9,0) INIT(0);
+
+   DCL WK_DUE_YYYY     FIXED DEC(4,0) INIT(0);
+   DCL WK_DUE_MM       FIXED DEC(2,0) INIT(0);
+   DCL WK_GE_YYYY      FIXED DEC(4,0) INIT(0);
+   DCL WK_GE_MM        FIXED DEC(2,0) INIT(0);
+   DCL WK_GE_DD        FIXED DEC(2,0) INIT(0);
+   DCL WK_GRACE_END    FIXED DEC(8,0) INIT(0);
+   DCL WK_LAPSE_DT     FIXED DEC(8,0) INIT(0);
+   DCL WK_LEAP         BIT(1) INIT('0'B);
+
+   /* 月別日数表 (1..12)。2月はうるう年で補正。 */
+   DCL DIM(12) FIXED DEC(2,0) INIT(31,28,31,30,31,30,31,31,30,31,30,31);
+   DCL WK_DIM          FIXED DEC(2,0) INIT(0);
+
+   ON ENDFILE(LFCONF) EOF_CON = '1'B;
+
+   ON ERROR BEGIN;
+      SW_ERR = '1'B;
+      WK_ERR_CNT = WK_ERR_CNT + 1;
+      PUT SKIP LIST('LF_POLMASTER 異常終了  件数=', WK_CON_CNT,
+                    '  失効=', WK_LAPSE_CNT, '  ERR=', WK_ERR_CNT);
+      GOTO ABEND_EXIT;
+   END;
+
+   OPEN FILE(LFCONF) INPUT;
+   OPEN FILE(LFLAPF) OUTPUT;
+
+   READ FILE(LFCONF) INTO(LFCONF_REC);
+
+   DO WHILE(^EOF_CON);
+      WK_CON_CNT = WK_CON_CNT + 1;
+
+      /* 月払 (M) かつ 当月払込が未入金 (0) の契約のみ猶予/失効判定の対象 */
+      IF CN_PAY_MODE_KBN = 'M' & CN_PAID_KBN = '0' THEN DO;
+
+         /* 払込期月 YYYYMM を分解 */
+         WK_DUE_YYYY = DECIMAL(SUBSTR(CN_DUE_YM,1,4),4,0);
+         WK_DUE_MM   = DECIMAL(SUBSTR(CN_DUE_YM,5,2),2,0);
+
+         /* 払込猶予期間 満了日を算出する */
+         WK_GE_YYYY = WK_DUE_YYYY;
+         WK_GE_MM   = WK_DUE_MM + 2;
+         IF WK_GE_MM > 12 THEN DO;
+            WK_GE_MM   = WK_GE_MM - 12;
+            WK_GE_YYYY = WK_GE_YYYY + 1;
+         END;
+
+         /* 当月末日 (うるう年補正) */
+         WK_DIM = DIM(WK_GE_MM);
+         IF WK_GE_MM = 2 THEN DO;
+            WK_LEAP = '0'B;
+            IF MOD(WK_GE_YYYY,4) = 0 &
+               (MOD(WK_GE_YYYY,100) ^= 0 | MOD(WK_GE_YYYY,400) = 0) THEN
+               WK_LEAP = '1'B;
+            IF WK_LEAP THEN WK_DIM = 29;
+         END;
+         WK_GE_DD = WK_DIM;
+
+         WK_GRACE_END = WK_GE_YYYY*10000 + WK_GE_MM*100 + WK_GE_DD;
+
+         /* 満了日までに未入金 -> 失効。失効日 = 満了日の翌日。 */
+         CALL NEXT_DAY(WK_GRACE_END, WK_LAPSE_DT);
+
+         CN_CON_STATUS_KBN = '05';        /* 失効 */
+         WK_LAPSE_CNT = WK_LAPSE_CNT + 1;
+
+         LP_CON_NO            = CN_CON_NO;
+         LP_LAPSE_DT          = WK_LAPSE_DT;
+         LP_GRACE_END_DT      = WK_GRACE_END;
+         LP_REINSTATE_DUE_DT  = 0;        /* 復活可能期限は lf_reinstate が設定 */
+         LP_LAPSE_PHASE_KBN   = '02';       /* 起票時=失効中 */
+         LP_REINST_STATUS_KBN = ' ';        /* 復活可否は lf_reinstate が判定 */
+         WRITE FILE(LFLAPF) FROM(LFLAPF_REC);
+      END;
+      ELSE IF CN_PAY_MODE_KBN = 'M' & CN_PAID_KBN = '1' THEN
+         CN_CON_STATUS_KBN = '01';        /* 入金済 -> 有効 */
+
+      READ FILE(LFCONF) INTO(LFCONF_REC);
+   END;
+
+   CLOSE FILE(LFCONF);
+   CLOSE FILE(LFLAPF);
+
+   PUT SKIP LIST('LF_POLMASTER 正常終了  契約=', WK_CON_CNT,
+                 '  失効=', WK_LAPSE_CNT);
+   GOTO NORMAL_EXIT;
+
+ABEND_EXIT:
+   CLOSE FILE(LFCONF);
+   CLOSE FILE(LFLAPF);
+
+NORMAL_EXIT:
+
+   /* 翌日算出 (月末・年末の繰上げ) */
+   NEXT_DAY: PROC(P_DT, P_NEXT);
+      DCL P_DT    FIXED DEC(8,0);
+      DCL P_NEXT  FIXED DEC(8,0);
+      DCL L_YYYY  FIXED DEC(4,0);
+      DCL L_MM    FIXED DEC(2,0);
+      DCL L_DD    FIXED DEC(2,0);
+      DCL L_DIM   FIXED DEC(2,0);
+      DCL L_LEAP  BIT(1) INIT('0'B);
+
+      L_YYYY = P_DT / 10000;
+      L_MM   = MOD(P_DT,10000) / 100;
+      L_DD   = MOD(P_DT,100);
+      L_DIM  = DIM(L_MM);
+      IF L_MM = 2 THEN DO;
+         IF MOD(L_YYYY,4) = 0 &
+            (MOD(L_YYYY,100) ^= 0 | MOD(L_YYYY,400) = 0) THEN L_DIM = 29;
+      END;
+      L_DD = L_DD + 1;
+      IF L_DD > L_DIM THEN DO;
+         L_DD = 1;
+         L_MM = L_MM + 1;
+         IF L_MM > 12 THEN DO; L_MM = 1; L_YYYY = L_YYYY + 1; END;
+      END;
+      P_NEXT = L_YYYY*10000 + L_MM*100 + L_DD;
+   END NEXT_DAY;
+
+END lf_polmaster;

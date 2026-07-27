@@ -1,0 +1,15 @@
+# req_id,wallet_id,amt,ccy
+# R1/R5: W1 -> golden avail 6000 (expired hold released); start avail 4000 -> discriminate
+R1,W1,6000,JPY
+R5,W1,5000,JPY
+# R2: W2 control -> both A (avail 3500)
+R2,W2,3000,JPY
+# R3: W3 over -> both D/LIM (avail 1500)
+R3,W3,5000,JPY
+# R4: W4 suspended -> both D/STS
+R4,W4,1000,JPY
+# R6: W5 6000 -> golden A (avail 6000: only the as-of hold counts, USD/expired excluded);
+#     start D/LIM (subtracts the expired hold too -> avail 3000)
+R6,W5,6000,JPY
+# R7: W5 8000 -> golden D/LIM (avail 6000); a `<=` release of the as-of hold (avail 10000) would approve
+R7,W5,8000,JPY

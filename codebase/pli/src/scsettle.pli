@@ -1,0 +1,292 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20191118   決済一課   初版作成                           */
+/*  01.01    20210329   決済一課   SCCALF休業日判定追加               */
+/*  01.02    20220404   決済二課   SCSETL出力項目追加                 */
+/*  01.03    20230612   決済二課   D-SEC-008(稟議-R06-118) 受渡日対応 */
+/*--------------------------------------------------------------------*/
+
+scsettle: PROC OPTIONS(MAIN);
+
+   DCL SCEXEC  FILE RECORD INPUT;
+   DCL SCCALF  FILE RECORD INPUT;
+   DCL SCSETL  FILE RECORD OUTPUT;
+
+   %INCLUDE SCEXECC;
+   %INCLUDE SCCALFC;
+   %INCLUDE SCSETLC;
+
+   DCL EOF_EXEC        BIT(1) INIT('0'B);
+   DCL EOF_CAL         BIT(1) INIT('0'B);
+   DCL SW_ERR          BIT(1) INIT('0'B);
+
+   DCL WK_EXEC_CNT     FIXED DEC(9,0) INIT(0);
+   DCL WK_SETL_CNT     FIXED DEC(9,0) INIT(0);
+   DCL WK_SKIP_CNT     FIXED DEC(9,0) INIT(0);
+   DCL WK_ERR_CNT      FIXED DEC(9,0) INIT(0);
+
+   DCL WK_SETL_ID_SEQ  FIXED DEC(9,0) INIT(0);
+   DCL WK_TRADE_DT     FIXED DEC(8,0) INIT(0);
+   DCL WK_SETL_DT      FIXED DEC(8,0) INIT(0);
+   DCL WK_CAL_DT       FIXED DEC(8,0) INIT(0);
+   DCL WK_YYYY         FIXED DEC(4,0) INIT(0);
+   DCL WK_MM           FIXED DEC(2,0) INIT(0);
+   DCL WK_DD           FIXED DEC(2,0) INIT(0);
+   DCL WK_DIM          FIXED DEC(2,0) INIT(0);
+   DCL WK_BUS_CNT      FIXED DEC(1,0) INIT(0);
+   DCL WK_LEAP         BIT(1) INIT('0'B);
+   DCL WK_FOUND        BIT(1) INIT('0'B);
+   DCL WK_HOLIDAY      BIT(1) INIT('0'B);
+   DCL WK_SETL_AMT     FIXED DEC(15,2) INIT(0);
+
+   DCL WK_MSG          CHAR(80) INIT('');
+   DCL WK_SETL_ID_C    CHAR(9) INIT('');
+
+   DCL 1 CAL_TBL OCCURS(400),
+         3 CAL_DT      FIXED DEC(8,0),
+         3 CAL_SESS    CHAR(1);
+
+   DCL CAL_MAX         FIXED DEC(4,0) INIT(0);
+   DCL IX              FIXED DEC(4,0) INIT(0);
+
+   ON ENDFILE(SCEXEC) EOF_EXEC = '1'B;
+   ON ENDFILE(SCCALF) EOF_CAL = '1'B;
+
+   ON ERROR BEGIN;
+      SW_ERR = '1'B;
+      WK_ERR_CNT = WK_ERR_CNT + 1;
+      PUT SKIP LIST('SCSETTLE 異常終了  件数=', WK_EXEC_CNT,
+                    '  SETL=', WK_SETL_CNT,
+                    '  ERR=', WK_ERR_CNT);
+      GOTO ABEND_EXIT;
+   END;
+
+   OPEN FILE(SCCALF) INPUT;
+   READ FILE(SCCALF) INTO(SCCALF_REC);
+
+   DO WHILE(^EOF_CAL);
+      IF CAL_MAX < 400 THEN DO;
+         CAL_MAX = CAL_MAX + 1;
+         CAL_DT(CAL_MAX)   = CA_SESS_DT;
+         CAL_SESS(CAL_MAX) = CA_SESS_KBN;
+      END;
+      ELSE DO;
+         WK_ERR_CNT = WK_ERR_CNT + 1;
+         PUT SKIP LIST('SCSETTLE カレンダ件数超過');
+         GOTO ABEND_EXIT;
+      END;
+
+      READ FILE(SCCALF) INTO(SCCALF_REC);
+   END;
+
+   CLOSE FILE(SCCALF);
+
+   OPEN FILE(SCEXEC) INPUT;
+   OPEN FILE(SCSETL) OUTPUT;
+
+   READ FILE(SCEXEC) INTO(SCEXEC_REC);
+
+   DO WHILE(^EOF_EXEC);
+      WK_EXEC_CNT = WK_EXEC_CNT + 1;
+      WK_MSG = '';
+
+      IF EX_EXEC_ID = '' THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         WK_MSG = '約定番号未設定';
+      END;
+      ELSE IF EX_CIF_NO = '' THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         WK_MSG = '顧客番号未設定';
+      END;
+      ELSE IF EX_INSTR_CODE = '' THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         WK_MSG = '銘柄コード未設定';
+      END;
+      ELSE IF EX_TRADE_DT <= 0 THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         WK_MSG = '約定日不正';
+      END;
+      ELSE IF EX_FILL_QTY <= 0 THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         WK_MSG = '約定数量不正';
+      END;
+      ELSE IF EX_FILL_AMT < 0 THEN DO;
+         WK_SKIP_CNT = WK_SKIP_CNT + 1;
+         WK_MSG = '約定単価不正';
+      END;
+      ELSE DO;
+         WK_TRADE_DT = EX_TRADE_DT;
+         WK_SETL_DT  = WK_TRADE_DT;
+         WK_BUS_CNT  = 0;
+
+         DO WHILE(WK_BUS_CNT < 2);
+            CALL_NEXT_DAY:
+            DO;
+               WK_YYYY = WK_SETL_DT / 10000;
+               WK_MM   = MOD(WK_SETL_DT / 100, 100);
+               WK_DD   = MOD(WK_SETL_DT, 100);
+
+               SELECT(WK_MM);
+                  WHEN(1,3,5,7,8,10,12) WK_DIM = 31;
+                  WHEN(4,6,9,11)        WK_DIM = 30;
+                  WHEN(2) DO;
+                     IF MOD(WK_YYYY,400) = 0 THEN WK_LEAP = '1'B;
+                     ELSE IF MOD(WK_YYYY,100) = 0 THEN WK_LEAP = '0'B;
+                     ELSE IF MOD(WK_YYYY,4) = 0 THEN WK_LEAP = '1'B;
+                     ELSE WK_LEAP = '0'B;
+
+                     IF WK_LEAP THEN WK_DIM = 29;
+                     ELSE WK_DIM = 28;
+                  END;
+                  OTHERWISE DO;
+                     WK_ERR_CNT = WK_ERR_CNT + 1;
+                     WK_SKIP_CNT = WK_SKIP_CNT + 1;
+                     WK_MSG = '約定年月不正';
+                     GOTO READ_NEXT_EXEC;
+                  END;
+               END;
+
+               WK_DD = WK_DD + 1;
+               IF WK_DD > WK_DIM THEN DO;
+                  WK_DD = 1;
+                  WK_MM = WK_MM + 1;
+                  IF WK_MM > 12 THEN DO;
+                     WK_MM = 1;
+                     WK_YYYY = WK_YYYY + 1;
+                  END;
+               END;
+
+               WK_SETL_DT = WK_YYYY * 10000 + WK_MM * 100 + WK_DD;
+            END;
+
+            WK_HOLIDAY = '0'B;
+            WK_FOUND   = '0'B;
+
+            DO IX = 1 TO CAL_MAX WHILE(^WK_FOUND);
+               IF CAL_DT(IX) = WK_SETL_DT THEN DO;
+                  WK_FOUND = '1'B;
+                  IF CAL_SESS(IX) = 'H' THEN WK_HOLIDAY = '1'B;
+                  ELSE WK_HOLIDAY = '0'B;
+               END;
+            END;
+
+            IF ^WK_FOUND THEN DO;
+               WK_ERR_CNT = WK_ERR_CNT + 1;
+               WK_SKIP_CNT = WK_SKIP_CNT + 1;
+               WK_MSG = 'カレンダ未登録';
+               GOTO READ_NEXT_EXEC;
+            END;
+
+            IF ^WK_HOLIDAY THEN WK_BUS_CNT = WK_BUS_CNT + 1;
+         END;
+
+         WK_HOLIDAY = '0'B;
+         WK_FOUND   = '0'B;
+
+         DO IX = 1 TO CAL_MAX WHILE(^WK_FOUND);
+            IF CAL_DT(IX) = WK_SETL_DT THEN DO;
+               WK_FOUND = '1'B;
+               IF CAL_SESS(IX) = 'H' THEN WK_HOLIDAY = '1'B;
+               ELSE WK_HOLIDAY = '0'B;
+            END;
+         END;
+
+         DO WHILE(WK_FOUND & WK_HOLIDAY);
+            WK_YYYY = WK_SETL_DT / 10000;
+            WK_MM   = MOD(WK_SETL_DT / 100, 100);
+            WK_DD   = MOD(WK_SETL_DT, 100);
+
+            SELECT(WK_MM);
+               WHEN(1,3,5,7,8,10,12) WK_DIM = 31;
+               WHEN(4,6,9,11)        WK_DIM = 30;
+               WHEN(2) DO;
+                  IF MOD(WK_YYYY,400) = 0 THEN WK_LEAP = '1'B;
+                  ELSE IF MOD(WK_YYYY,100) = 0 THEN WK_LEAP = '0'B;
+                  ELSE IF MOD(WK_YYYY,4) = 0 THEN WK_LEAP = '1'B;
+                  ELSE WK_LEAP = '0'B;
+
+                  IF WK_LEAP THEN WK_DIM = 29;
+                  ELSE WK_DIM = 28;
+               END;
+               OTHERWISE DO;
+                  WK_ERR_CNT = WK_ERR_CNT + 1;
+                  WK_SKIP_CNT = WK_SKIP_CNT + 1;
+                  WK_MSG = '受渡年月不正';
+                  GOTO READ_NEXT_EXEC;
+               END;
+            END;
+
+            WK_DD = WK_DD + 1;
+            IF WK_DD > WK_DIM THEN DO;
+               WK_DD = 1;
+               WK_MM = WK_MM + 1;
+               IF WK_MM > 12 THEN DO;
+                  WK_MM = 1;
+                  WK_YYYY = WK_YYYY + 1;
+               END;
+            END;
+
+            WK_SETL_DT = WK_YYYY * 10000 + WK_MM * 100 + WK_DD;
+
+            WK_HOLIDAY = '0'B;
+            WK_FOUND   = '0'B;
+
+            DO IX = 1 TO CAL_MAX WHILE(^WK_FOUND);
+               IF CAL_DT(IX) = WK_SETL_DT THEN DO;
+                  WK_FOUND = '1'B;
+                  IF CAL_SESS(IX) = 'H' THEN WK_HOLIDAY = '1'B;
+                  ELSE WK_HOLIDAY = '0'B;
+               END;
+            END;
+
+            IF ^WK_FOUND THEN DO;
+               WK_ERR_CNT = WK_ERR_CNT + 1;
+               WK_SKIP_CNT = WK_SKIP_CNT + 1;
+               WK_MSG = 'カレンダ未登録';
+               GOTO READ_NEXT_EXEC;
+            END;
+         END;
+
+         WK_SETL_AMT = EX_FILL_QTY * EX_FILL_AMT;
+         WK_SETL_ID_SEQ = WK_SETL_ID_SEQ + 1;
+         WK_SETL_ID_C = EDIT(WK_SETL_ID_SEQ, '999999999');
+
+         ST_SETL_ID    = 'ST' || SUBSTR(WK_SETL_ID_C,3,7);
+         ST_EXEC_ID    = EX_EXEC_ID;
+         ST_CIF_NO     = EX_CIF_NO;
+         ST_INSTR_CODE = EX_INSTR_CODE;
+         ST_TRADE_DT   = EX_TRADE_DT;
+         ST_SETL_DT    = WK_SETL_DT;
+         ST_SETL_AMT   = WK_SETL_AMT;
+         ST_SETL_KBN   = 'DVP';
+         ST_STATUS_KBN = 'P';
+
+         WRITE FILE(SCSETL) FROM(SCSETL_REC);
+         WK_SETL_CNT = WK_SETL_CNT + 1;
+      END;
+
+READ_NEXT_EXEC:
+      IF WK_MSG ^= '' THEN
+         PUT SKIP LIST('SCSETTLE スキップ EXEC-ID=', EX_EXEC_ID,
+                       ' 理由=', WK_MSG);
+
+      READ FILE(SCEXEC) INTO(SCEXEC_REC);
+   END;
+
+   CLOSE FILE(SCEXEC);
+   CLOSE FILE(SCSETL);
+
+   PUT SKIP LIST('SCSETTLE 正常終了  EXEC=', WK_EXEC_CNT,
+                 '  SETL=', WK_SETL_CNT,
+                 '  SKIP=', WK_SKIP_CNT,
+                 '  ERR=', WK_ERR_CNT);
+
+   RETURN;
+
+ABEND_EXIT:
+   IF ^EOF_EXEC THEN CLOSE FILE(SCEXEC);
+   CLOSE FILE(SCSETL);
+   SIGNAL ERROR;
+
+END scsettle;

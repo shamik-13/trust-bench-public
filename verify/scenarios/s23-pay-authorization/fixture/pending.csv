@@ -1,0 +1,4 @@
+# wallet_id,amt,status   (status PN-PEND-STATUS: 10 未確定 -> subtracted; 30 清算済 -> ignored)
+W1,1000,10
+W2,500,10
+W2,300,30

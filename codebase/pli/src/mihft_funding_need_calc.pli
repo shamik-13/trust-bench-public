@@ -1,0 +1,23 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴  版数 年月日 担当 概要                                   */
+/*  01.00  20191120  決済二課  新規作成 (所要資金計算)                */
+/*--------------------------------------------------------------------*/
+mihft_funding_need_calc: PROC OPTIONS(MAIN);
+   DCL SCSETL FILE RECORD INPUT;
+   DCL SCFUND FILE RECORD OUTPUT;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCFUNDC;
+   DCL EOF_SETL BIT(1) INIT('0'B);
+   DCL WK_NEED  FIXED DEC(15,2) INIT(0);
+   ON ENDFILE(SCSETL) EOF_SETL = '1'B;
+   OPEN FILE(SCSETL) INPUT; OPEN FILE(SCFUND) OUTPUT;
+   READ FILE(SCSETL) INTO(SCSETL_REC);
+   DO WHILE(^EOF_SETL);
+      /* 受渡日(ST-SETL-DT, 入力値)単位に資金決済額を集計し所要額を算出 */
+      IF ST_SETL_KBN = 'CASH' THEN WK_NEED = WK_NEED + ST_SETL_AMT;
+      FD_CIF_NO = ST_CIF_NO; FD_VALUE_DT = ST_SETL_DT; FD_REQ_AMT = ST_SETL_AMT;
+      WRITE FILE(SCFUND) FROM(SCFUND_REC);
+      READ FILE(SCSETL) INTO(SCSETL_REC);
+   END;
+   CLOSE FILE(SCSETL); CLOSE FILE(SCFUND);
+END mihft_funding_need_calc;

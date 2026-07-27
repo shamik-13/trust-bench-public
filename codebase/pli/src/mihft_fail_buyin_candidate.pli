@@ -1,0 +1,380 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数    年月日      担当      概要                              */
+/*    01.00   1998/04/01  小林 直樹 (E-252)      フェイル買戻候補抽出 新規作成      */
+/*    01.01   2001/09/17  三宅 拓也 (E-241)      CIF内入庫予定充当判定を追加        */
+/*    01.02   2005/02/28  村上 健司 (E-301)      想定差額算出を約定単価基準へ変更    */
+/*    01.03   2008/10/14  福田 亮太 (E-211)        監査出力および経路判定呼出を追加    */
+/*    01.04   2012/06/25  中川 美和 (E-283)      優先区分と営業日経過判定を補正      */
+/*--------------------------------------------------------------------*/
+
+mihft_fail_buyin_candidate: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCFAILC;
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCRECNC;
+   %INCLUDE SCAUDTC;
+
+   DCL  SCFAILF FILE RECORD INPUT  ENV(F RECSIZE(240));
+   DCL  SCPOSIF FILE RECORD INPUT  ENV(F RECSIZE(200));
+   DCL  SCRECNF FILE RECORD OUTPUT ENV(F RECSIZE(260));
+   DCL  SCAUDTF FILE RECORD OUTPUT ENV(F RECSIZE(180));
+
+   DCL  EOF_FAIL        BIT(1) INIT('0'B);
+   DCL  EOF_POSI        BIT(1) INIT('0'B);
+   DCL  ERR_SW          BIT(1) INIT('0'B);
+   DCL  HOLD_SW         BIT(1) INIT('0'B);
+   DCL  FOUND_SW        BIT(1) INIT('0'B);
+   DCL  SAME_KEY_SW     BIT(1) INIT('0'B);
+
+   DCL  WK_PGMID        CHAR(10) INIT('MIHFTFAIL');
+   DCL  WK_RUN_DATE     FIXED DEC(8,0);
+   DCL  WK_RUN_TIME     CHAR(6);
+   DCL  WK_MSG          CHAR(80);
+   DCL  WK_ROUTE_CD     CHAR(4);
+   DCL  WK_ROUTE_STAT   CHAR(1);
+   DCL  WK_REASON_CD    CHAR(2);
+   DCL  WK_PRI_KBN      CHAR(1);
+   DCL  WK_BUYIN_KBN    CHAR(1);
+
+   DCL  WK_FAIL_ID      CHAR(10);
+   DCL  WK_FAIL_CIF     CHAR(16);
+   DCL  WK_FAIL_INSTR   CHAR(4);
+   DCL  WK_FAIL_SETTLE  FIXED DEC(8,0);
+   DCL  WK_FAIL_QTY     FIXED DEC(13,0);
+   DCL  WK_ALLOC_QTY    FIXED DEC(13,0);
+   DCL  WK_SHORT_QTY    FIXED DEC(13,0);
+   DCL  WK_CAND_QTY     FIXED DEC(13,0);
+   DCL  WK_IN_QTY       FIXED DEC(13,0);
+
+   DCL  WK_FAIL_AMT     FIXED DEC(15,2);
+   DCL  WK_EST_AMT      FIXED DEC(15,0);
+   DCL  WK_TMP_AMT      FIXED DEC(17,4);
+   DCL  WK_COMM_AMT     FIXED DEC(13,0);
+   DCL  WK_TAX_AMT      FIXED DEC(13,0);
+   DCL  WK_NET_AMT      FIXED DEC(15,0);
+
+   DCL  WK_AGE_DAYS     FIXED BIN(15);
+   DCL  WK_LIMIT_DAYS   FIXED BIN(15);
+   DCL  WK_I            FIXED BIN(15);
+   DCL  WK_CNT_IN       FIXED BIN(31) INIT(0);
+   DCL  WK_CNT_FAIL     FIXED BIN(31) INIT(0);
+   DCL  WK_CNT_CAND     FIXED BIN(31) INIT(0);
+   DCL  WK_CNT_SKIP     FIXED BIN(31) INIT(0);
+   DCL  WK_CNT_ERR      FIXED BIN(31) INIT(0);
+   DCL  WK_RECON_SEQ    FIXED BIN(31) INIT(0);
+   DCL  WK_AUDIT_SEQ    FIXED BIN(31) INIT(0);
+   DCL  WK_SEQ_C        PIC'(10)9';
+
+   DCL  1 IN_SCHED OCCURS(4000),
+          2 IN_CIF       CHAR(16),
+          2 IN_INSTR     CHAR(4),
+          2 IN_KEY       CHAR(10),
+          2 IN_DATE      FIXED DEC(8,0),
+          2 IN_QTY       FIXED DEC(13,0),
+          2 IN_USED_QTY  FIXED DEC(13,0),
+          2 IN_STAT      CHAR(2);
+
+   DCL  DATE             BUILTIN;
+   DCL  TIME             BUILTIN;
+   DCL  SUBSTR           BUILTIN;
+   DCL  ROUND            BUILTIN;
+   DCL  ABS              BUILTIN;
+   DCL  STRING           BUILTIN;
+   DCL  ONCODE           BUILTIN;
+
+   ON ENDFILE(SCFAILF) EOF_FAIL = '1'B;
+   ON ENDFILE(SCPOSIF) EOF_POSI = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      WK_CNT_ERR = WK_CNT_ERR + 1;
+      WK_MSG = '異常終了 ONCODE=' || ONCODE;
+      CALL WRITE_AUDIT('E', '99', WK_MSG);
+      GOTO CLOSE_RTN;
+   END;
+
+   WK_RUN_DATE = DECIMAL(DATE(), 8, 0);
+   WK_RUN_TIME = SUBSTR(TIME(), 1, 6);
+
+   OPEN FILE(SCFAILF) INPUT;
+   OPEN FILE(SCPOSIF) INPUT;
+   OPEN FILE(SCRECNF) OUTPUT;
+   OPEN FILE(SCAUDTF) OUTPUT;
+
+   CALL WRITE_AUDIT('I', '00', 'フェイル買戻候補抽出 開始');
+
+   DO WHILE(^EOF_POSI);
+      READ FILE(SCPOSIF) INTO(SCPOSI_REC);
+      IF EOF_POSI THEN LEAVE;
+
+      IF PS_PENDING_IN_QTY  > 0
+       & PS_STATUS_KBN      = '0'
+       & PS_BASE_DT        >= WK_RUN_DATE THEN DO;
+
+         IF WK_CNT_IN < 4000 THEN DO;
+            WK_CNT_IN = WK_CNT_IN + 1;
+            IN_CIF(WK_CNT_IN)      = PS_CIF_NO;
+            IN_INSTR(WK_CNT_IN)    = PS_INSTR_CODE;
+            IN_KEY(WK_CNT_IN)      = PS_POS_KEY;
+            IN_DATE(WK_CNT_IN)     = PS_BASE_DT;
+            IN_QTY(WK_CNT_IN)      = PS_PENDING_IN_QTY;
+            IN_USED_QTY(WK_CNT_IN) = 0;
+            IN_STAT(WK_CNT_IN)     = PS_STATUS_KBN;
+         END;
+         ELSE DO;
+            WK_CNT_ERR = WK_CNT_ERR + 1;
+            CALL WRITE_AUDIT('W', '20', '入庫予定退避領域超過');
+         END;
+      END;
+   END;
+
+   DO WHILE(^EOF_FAIL);
+      READ FILE(SCFAILF) INTO(SCFAIL_REC);
+      IF EOF_FAIL THEN LEAVE;
+
+      WK_CNT_FAIL = WK_CNT_FAIL + 1;
+      HOLD_SW = '0'B;
+      FOUND_SW = '0'B;
+      WK_REASON_CD = '00';
+      WK_PRI_KBN = '3';
+      WK_BUYIN_KBN = 'N';
+
+      WK_FAIL_ID     = FL_FAIL_ID;
+      WK_FAIL_CIF    = FL_CIF_NO;
+      WK_FAIL_INSTR  = FL_INSTR_CODE;
+      WK_FAIL_SETTLE = FL_SETL_DT;
+      WK_FAIL_QTY    = FL_FAIL_QTY;
+      WK_FAIL_AMT    = FL_FAIL_AMT;
+
+      IF FL_STATUS_KBN = '9' THEN DO;
+         WK_CNT_SKIP = WK_CNT_SKIP + 1;
+         ITERATE;
+      END;
+
+      IF FL_REASON_KBN ^= '1'
+       & FL_REASON_KBN ^= '2' THEN DO;
+         WK_CNT_SKIP = WK_CNT_SKIP + 1;
+         CALL WRITE_AUDIT('W', '10',
+              '事由区分対象外 CIF=' || WK_FAIL_CIF);
+         ITERATE;
+      END;
+
+      IF WK_FAIL_QTY <= 0 THEN DO;
+         WK_CNT_SKIP = WK_CNT_SKIP + 1;
+         ITERATE;
+      END;
+
+      WK_SHORT_QTY = WK_FAIL_QTY;
+
+      CALL CALC_AGE(WK_FAIL_SETTLE, WK_RUN_DATE, WK_AGE_DAYS);
+
+      SELECT (FL_REASON_KBN);
+         WHEN('1') WK_LIMIT_DAYS = 3;
+         WHEN('2') WK_LIMIT_DAYS = 4;
+         OTHERWISE WK_LIMIT_DAYS = 4;
+      END;
+
+      IF WK_AGE_DAYS < WK_LIMIT_DAYS THEN DO;
+         WK_CNT_SKIP = WK_CNT_SKIP + 1;
+         ITERATE;
+      END;
+
+      IF FL_STATUS_KBN ^= ' '
+       & FL_STATUS_KBN ^= '0' THEN DO;
+         HOLD_SW = '1'B;
+         WK_REASON_CD = '31';
+      END;
+
+      IF ^HOLD_SW THEN DO;
+         WK_IN_QTY = 0;
+
+         DO WK_I = 1 TO WK_CNT_IN
+            WHILE(WK_IN_QTY < WK_SHORT_QTY);
+
+            SAME_KEY_SW = '0'B;
+
+            IF IN_CIF(WK_I)   = WK_FAIL_CIF
+             & IN_INSTR(WK_I) = WK_FAIL_INSTR
+             & IN_STAT(WK_I)  = '0'
+             & IN_DATE(WK_I) <= WK_FAIL_SETTLE THEN
+               SAME_KEY_SW = '1'B;
+
+            IF SAME_KEY_SW THEN DO;
+               FOUND_SW = '1'B;
+
+               IF IN_QTY(WK_I) - IN_USED_QTY(WK_I)
+                    > WK_SHORT_QTY - WK_IN_QTY THEN DO;
+                  IN_USED_QTY(WK_I) =
+                     IN_USED_QTY(WK_I) + WK_SHORT_QTY - WK_IN_QTY;
+                  WK_IN_QTY = WK_SHORT_QTY;
+               END;
+               ELSE DO;
+                  WK_IN_QTY =
+                     WK_IN_QTY + IN_QTY(WK_I) - IN_USED_QTY(WK_I);
+                  IN_USED_QTY(WK_I) = IN_QTY(WK_I);
+               END;
+            END;
+         END;
+
+         WK_ALLOC_QTY = WK_IN_QTY;
+
+         IF WK_IN_QTY >= WK_SHORT_QTY THEN DO;
+            WK_CNT_SKIP = WK_CNT_SKIP + 1;
+            CALL WRITE_AUDIT('I', '21',
+                 '入庫予定充当 CIF=' || WK_FAIL_CIF);
+            ITERATE;
+         END;
+
+         WK_CAND_QTY = WK_SHORT_QTY - WK_IN_QTY;
+      END;
+      ELSE
+         WK_CAND_QTY = WK_SHORT_QTY;
+
+      IF WK_CAND_QTY <= 0 THEN DO;
+         WK_CNT_SKIP = WK_CNT_SKIP + 1;
+         ITERATE;
+      END;
+
+      IF WK_REASON_CD = '00' THEN DO;
+         IF FOUND_SW THEN
+            WK_REASON_CD = '21';
+         ELSE
+            WK_REASON_CD = '11';
+      END;
+
+      SELECT;
+         WHEN(WK_AGE_DAYS >= WK_LIMIT_DAYS + 5) WK_PRI_KBN = '1';
+         WHEN(WK_CAND_QTY >= 10000)             WK_PRI_KBN = '1';
+         WHEN(WK_AGE_DAYS >= WK_LIMIT_DAYS + 2) WK_PRI_KBN = '2';
+         OTHERWISE                              WK_PRI_KBN = '3';
+      END;
+
+      WK_EST_AMT = ROUND(WK_FAIL_AMT, 0);
+
+      WK_COMM_AMT = ROUND(ABS(WK_FAIL_AMT) * .0008, 0);
+      WK_TAX_AMT  = ROUND(WK_COMM_AMT * .10, 0);
+      WK_NET_AMT  = WK_EST_AMT + WK_COMM_AMT + WK_TAX_AMT;
+
+      WK_ROUTE_CD = '    ';
+      WK_ROUTE_STAT = '0';
+      CALL RESOLVE_ROUTE(WK_FAIL_INSTR,
+                         FL_REASON_KBN,
+                         WK_PRI_KBN,
+                         WK_ROUTE_CD,
+                         WK_ROUTE_STAT);
+
+      IF WK_ROUTE_STAT ^= '0' THEN DO;
+         WK_REASON_CD = '50';
+         WK_PRI_KBN = '2';
+      END;
+
+      IF HOLD_SW THEN
+         WK_BUYIN_KBN = 'H';
+      ELSE
+         WK_BUYIN_KBN = 'C';
+
+      SCRECN_REC = '';
+      WK_RECON_SEQ = WK_RECON_SEQ + 1;
+      WK_SEQ_C = WK_RECON_SEQ;
+      RC_RECON_ID    = 'RC' || SUBSTR(WK_SEQ_C, 3, 8);
+      RC_SOURCE_KBN  = 'FL';
+      RC_TARGET_KBN  = 'B' || WK_BUYIN_KBN;
+      RC_BUS_DT      = WK_FAIL_SETTLE;
+      RC_REF_ID      = WK_FAIL_ID;
+      RC_DIFF_AMT    = WK_NET_AMT;
+      RC_DIFF_QTY    = WK_CAND_QTY;
+      RC_RESULT_KBN  = WK_PRI_KBN;
+
+      WRITE FILE(SCRECNF) FROM(SCRECN_REC);
+
+      WK_CNT_CAND = WK_CNT_CAND + 1;
+   END;
+
+   CALL WRITE_AUDIT('I', '09',
+        '終了 F=' || WK_CNT_FAIL ||
+        ' C=' || WK_CNT_CAND ||
+        ' S=' || WK_CNT_SKIP);
+
+CLOSE_RTN:
+   CLOSE FILE(SCFAILF);
+   CLOSE FILE(SCPOSIF);
+   CLOSE FILE(SCRECNF);
+   CLOSE FILE(SCAUDTF);
+
+   IF ERR_SW THEN
+      SIGNAL ERROR;
+
+   RETURN;
+
+CALC_AGE: PROC(P_FROM, P_TO, P_DAYS);
+   DCL P_FROM FIXED DEC(8,0);
+   DCL P_TO   FIXED DEC(8,0);
+   DCL P_DAYS FIXED BIN(15);
+
+   DCL F_Y FIXED BIN(15);
+   DCL F_M FIXED BIN(15);
+   DCL F_D FIXED BIN(15);
+   DCL T_Y FIXED BIN(15);
+   DCL T_M FIXED BIN(15);
+   DCL T_D FIXED BIN(15);
+   DCL F_S FIXED BIN(31);
+   DCL T_S FIXED BIN(31);
+
+   F_Y = P_FROM / 10000;
+   F_M = MOD(P_FROM / 100, 100);
+   F_D = MOD(P_FROM, 100);
+   T_Y = P_TO / 10000;
+   T_M = MOD(P_TO / 100, 100);
+   T_D = MOD(P_TO, 100);
+
+   F_S = F_Y * 372 + F_M * 31 + F_D;
+   T_S = T_Y * 372 + T_M * 31 + T_D;
+
+   P_DAYS = T_S - F_S;
+   IF P_DAYS < 0 THEN P_DAYS = 0;
+END CALC_AGE;
+
+WRITE_AUDIT: PROC(P_LVL, P_CD, P_TEXT);
+   DCL P_LVL  CHAR(1);
+   DCL P_CD   CHAR(2);
+   DCL P_TEXT CHAR(80);
+
+   SCAUDT_REC = '';
+   WK_AUDIT_SEQ = WK_AUDIT_SEQ + 1;
+   WK_SEQ_C = WK_AUDIT_SEQ;
+   AU_AUDIT_ID      = 'AU' || SUBSTR(WK_SEQ_C, 3, 8);
+   AU_PGM_ID        = WK_PGMID;
+   AU_BUS_DT        = WK_RUN_DATE;
+   AU_REF_ID        = P_CD;
+   AU_EVENT_KBN     = P_CD;
+   AU_BEFORE_STATUS = P_LVL;
+   AU_AFTER_STATUS  = P_LVL;
+   AU_OP_TS         = DATE() || WK_RUN_TIME;
+
+   WRITE FILE(SCAUDTF) FROM(SCAUDT_REC);
+END WRITE_AUDIT;
+
+RESOLVE_ROUTE: PROC(P_INSTR, P_REASON, P_PRI, P_ROUTE, P_STAT);
+   DCL P_INSTR  CHAR(4);
+   DCL P_REASON CHAR(2);
+   DCL P_PRI    CHAR(1);
+   DCL P_ROUTE  CHAR(4);
+   DCL P_STAT   CHAR(1);
+
+   P_STAT = '0';
+
+   SELECT(P_REASON);
+      WHEN('1') P_ROUTE = 'DOM0';
+      WHEN('2') P_ROUTE = 'GBL0';
+      OTHERWISE DO;
+         P_ROUTE = '    ';
+         P_STAT  = '1';
+      END;
+   END;
+
+   IF P_STAT = '0' & P_PRI = '1' THEN
+      P_ROUTE = 'EXP' || P_PRI;
+END RESOLVE_ROUTE;
+
+END mihft_fail_buyin_candidate;

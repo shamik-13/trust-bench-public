@@ -1,0 +1,1970 @@
+[
+  {
+    "task_id": "S1-F1",
+    "scenario": "s1-fees",
+    "catalog_id": "F1",
+    "tier": 1,
+    "mechanic": "locate",
+    "grading": "answer-judged",
+    "prompt": "サイクル締め時の利用限度超過手数料を、承認済みの手数料ポリシーに合わせて修正したいです。まず、この手数料を計算しているバッチプログラムを特定し、根拠となる入出力ファイルも確認してください。",
+    "golden": {
+      "correctness": [
+        "対象プログラムは KZ110B。",
+        "KZ110B はサイクル末手数料計算バッチであり、サイクル終了時の over-limit fee を計算する。"
+      ],
+      "completeness": [
+        "KZ110B 自身が OPEN するのは入力 KZACCTF と出力 KZFEEHF。料率テーブル KZDGRPF は呼出先サブ（KZ120S/KZ125S）が参照する。",
+        "KZCARDF・KZTRANF は FILE-CONTROL/FD に宣言されているが本バッチでは OPEN/READ されない旧版の名残である。",
+        "回答はコードと業務文書の照合により、他の手数料関連バッチではなくサイクル末の限度超過手数料計算箇所であることを説明している。"
+      ]
+    }
+  },
+  {
+    "task_id": "S1-F2",
+    "scenario": "s1-fees",
+    "catalog_id": "F2",
+    "tier": 1,
+    "mechanic": "code-partial->doc-completes",
+    "grading": "answer-judged",
+    "prompt": "サイクルエンドの限度超過手数料計算について、現行COBOLの実装が承認済みの手数料方針とずれていないか確認してください。該当ロジックを特定し、方針上の正しい計算方法と、必要なら修正すべき点を簡潔に報告してください。",
+    "golden": {
+      "correctness": [
+        "D-0457 に基づき、手数料は OVER-AMT × rate(GROUP-CODE) で計算する。",
+        "標準レートは D-0457 の基準料率で 1.5%、すなわち 0.0150（改定前基準）。料率改定 D-0772 による改定後料率 0.0180 は本タスク(D-0457 の料率方式確認)の対象外であり、0.0180 を挙げても誤りとはしない。",
+        "rate(GROUP-CODE) が 0 の場合は手数料免除として扱う。",
+        "D-0733 に基づき、算出した手数料は円未満を切り捨てて整数円にする。"
+      ],
+      "completeness": [
+        "根拠文書として DG-KZ110 と RATE-XLSX を参照していること。",
+        "単純に標準 1.5% を一律適用する読み方は誤りで、優遇グループ別レートが上書きする点を説明していること。",
+        "該当するCOBOL側の限度超過額入力、グループコード参照、手数料出力の流れを特定していること。"
+      ]
+    }
+  },
+  {
+    "task_id": "S1-F3",
+    "scenario": "s1-fees",
+    "catalog_id": "F3",
+    "tier": 1,
+    "mechanic": "code-partial+structural",
+    "grading": "answer-judged",
+    "prompt": "月次サイクル終了時の過枠手数料計算について、承認済みの手数料方針と現行COBOL実装が一致しているか確認してください。不一致があれば、どのデータ項目を有効料率として読むべきか、現行実装で何を読んでいるかを特定してください。",
+    "golden": {
+      "correctness": [
+        "RATE-XLSX の D-0772 では、有効な過枠手数料率は改定後フィールド `OL-FEE-RATE` である。",
+        "`OL-FEE-RATE-OLD` は改定前の料率であり、承認済み方針では superseded 扱いで有効料率として使ってはいけない。",
+        "現行の月次サイクル終了時 over-limit fee engine は誤って `OL-FEE-RATE-OLD` を有効料率として参照しているため、`OL-FEE-RATE` 参照へ修正すべきである。"
+      ],
+      "completeness": [
+        "根拠文書として RATE-XLSX、特に D-0772 の改定前/改定後フィールド定義を挙げる。",
+        "計算ロジック上は過枠手数料 = 対象残高または基準額に有効料率を適用する箇所で、料率入力項目だけが問題であることを説明する。",
+        "単に名前が似ている `OL-FEE-RATE-OLD` を読むのは、レガシー互換用または改定前保持用の項目を誤って採用しているため不正である、と明示する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S1-F4",
+    "scenario": "s1-fees",
+    "catalog_id": "F4",
+    "tier": 1,
+    "mechanic": "source-invisible",
+    "grading": "answer-judged",
+    "prompt": "サイクルエンドの over-limit fee engine が、承認済みの最新 fee policy と合っているか確認してください。コードと業務文書を突き合わせ、必要なルール差分と修正対象の挙動を特定して回答してください。",
+    "golden": {
+      "correctness": [
+        "D-0701 requires total over-limit fees per cycle to be capped at ¥50,000.",
+        "When the per-cycle cap is applied/reached, CAP-FLAG must be set.",
+        "The current shipped behavior is incorrect because over-limit fees accumulate without any per-cycle cap and CAP-FLAG is never set."
+      ],
+      "completeness": [
+        "Identifies 議事録 MIN-CRD-R07-019 (稟議-R07-031) as the authoritative source for the approved fee policy/card-network commitment.",
+        "Explains that the cap is per cycle on total over-limit fees, not a per-transaction or per-account-lifetime limit.",
+        "Mentions the implementation must clamp/suppress additional cycle over-limit fee accumulation once the cap is reached while preserving the flag for downstream processing."
+      ]
+    }
+  },
+  {
+    "task_id": "S1-F5",
+    "scenario": "s1-fees",
+    "catalog_id": "F5",
+    "tier": 1,
+    "mechanic": "doc-code-drift",
+    "grading": "answer-judged",
+    "prompt": "サイクルエンドの利用限度超過手数料について、承認済みの手数料ポリシーと現行COBOL実装にズレがないか確認してください。関連ドキュメントを根拠に、ズレがある場合はどの処理・どの階層判定を直すべきか特定してください。",
+    "golden": {
+      "correctness": [
+        "DECK-D0612 states that the PREM tier is deprecated for the cycle-end over-limit fee policy.",
+        "PREM accounts must be mapped to the standard rate tier, STD0, for over-limit fee calculation.",
+        "The current/pre-change implementation is wrong because it treats PREM as an active independent tier and derives a distinct PREM rate.",
+        "The fix is to remove/avoid PREM-specific rate derivation and route PREM tier inputs through the STD0/standard-rate path."
+      ],
+      "completeness": [
+        "Cites DECK-D0612 as the decisive policy source and DG-KZ110 as the supporting design guide for the fee engine behavior.",
+        "Identifies the affected logic as the cycle-end over-limit fee tier/rate selection path, not posting, billing output, or account eligibility in general.",
+        "Explains that a naive reading of legacy tier tables/code is misleading because PREM may still appear in code or reference data even though the approved policy deprecates it for this calculation."
+      ]
+    }
+  },
+  {
+    "task_id": "S1-F6",
+    "scenario": "s1-fees",
+    "catalog_id": "F6",
+    "tier": 2,
+    "mechanic": "multi-rule+code-partial+source-invisible",
+    "grading": "behavioral",
+    "prompt": "サイクルエンドの与信超過手数料計算が、最新の承認済み手数料ポリシーと合っていないとの指摘があります。関連する設計資料・議事録を確認し、該当するバッチ／サブルーチンを修正して、免除条件、上限判定、手数料額が承認済みルール通りになるよう実装してください。",
+    "engine": [
+      "KZ110B",
+      "KZ115B",
+      "KZ125S",
+      "KZ120S"
+    ],
+    "verify_dir": "benchmark/scenarios/s1-fees/verify",
+    "golden": {
+      "expected_fix": [
+        "KZ125S、KZ120S、KZ115B が修正対象である（KZ110B は呼出元のドライバで変更不要）。",
+        "有効料率は改定後フィールド OL-FEE-RATE を参照する（改定前 OL-FEE-RATE-OLD は使わない）。標準 STD0 は 0.0180、優遇 GLD1 は 0.0120（D-0772）。",
+        "PREM グループは廃止済みのため独自料率を導出せず、標準 STD0 料率に寄せる（D-0612）。",
+        "料率が 0 のグループ（EXMP 等）は手数料免除として扱い、手数料 0・EXEMPT フラグを設定する（D-0457）。",
+        "サイクル内の超過手数料合計を ¥50,000 で上限とし、上限到達時は CAP-FLAG を設定する（D-0701）。",
+        "手数料は OVER-AMT × 有効料率で算出し、円未満を切り捨てる（D-0733）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S1-F7",
+    "scenario": "s1-fees",
+    "catalog_id": "F7",
+    "tier": 1,
+    "mechanic": "cross-modal-rationale",
+    "grading": "answer-judged",
+    "prompt": "月次サイクル末の限度超過手数料について、現行COBOLの計算ロジックが承認済みの手数料ポリシーと一致しているか確認してください。関連する設計資料と料率表を突き合わせ、実装で直すべき計算ルールを特定して説明してください。",
+    "golden": {
+      "correctness": [
+        "D-0457: 限度超過手数料は `fee = OVER-AMT × rate(GROUP-CODE)` で算出し、GROUP-CODE 別の優遇料率が標準料率（0.0150、改定前基準）を上書きし、料率0のグループは免除となる（料率改定 D-0772 の改定後 0.0180 は F3/F6 の担当で本タスクの対象外）。",
+        "D-0612: PREM ティアは廃止済みで、PREM 口座は独自料率を導出せず標準 STD0 料率で計算する（DECK-D0612 が決定根拠）。",
+        "D-0701: サイクル単位の超過手数料合計は ¥50,000 を上限とし、上限到達時は CAP-FLAG を設定する（議事録 MIN-CRD-R07-019 (稟議-R07-031) が唯一の根拠）。",
+        "上記3点（料率方式・PREM標準化・サイクル上限）の突き合わせから、実装で直すべき計算ルールはこの3つだと結論づけている。"
+      ],
+      "completeness": [
+        "料率方式の根拠は RATE-XLSX / DG-KZ110、PREM 廃止は DECK-D0612、サイクル上限は 議事録 MIN-CRD-R07-019 (稟議-R07-031) と、根拠をモダリティ横断で対応付けている。",
+        "一律1.5%適用・PREM独自料率の維持・上限なしの累積はいずれも誤りである点を説明している。",
+        "KZACCTF.GROUP-CODE を起点に、料率引当・PREM正規化・サイクル上限判定がどのプログラム階層に対応するかを示している。"
+      ]
+    }
+  },
+  {
+    "task_id": "S10-C16",
+    "scenario": "s10-tax",
+    "catalog_id": "C16",
+    "tier": 2,
+    "mechanic": "regulatory-engine",
+    "grading": "behavioral",
+    "prompt": "KZ620Bの利息源泉税計算が、口座種別ごとの税率と非課税口座の扱いを正しく反映していないとの指摘がありました。関連する設計書・通達資料を確認し、規制で求められている端数処理を含めて、支払利息から控除する源泉税額が正しく算出されるよう修正してください。",
+    "engine": [
+      "KZ620B"
+    ],
+    "verify_dir": "benchmark/scenarios/s10-tax/verify",
+    "golden": {
+      "expected_fix": [
+        "KZ620Bを修正対象とする。",
+        "口座種別ごとに定義された源泉税率を適用し、NISA対象口座は源泉税を0円とする。",
+        "国税分と地方税分を合算後に切り捨てるのではなく、それぞれ個別に計算して1円未満を切り捨てた後に合算する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S10-R26",
+    "scenario": "s10-tax",
+    "catalog_id": "R26",
+    "tier": 1,
+    "mechanic": "multi-doc-assembly",
+    "grading": "answer-judged",
+    "prompt": "利息支払時の源泉税計算について、口座種別ごとの税率と非課税扱い、端数処理がどこで定義・実装されているか確認し、現行仕様として税額計算ルールをまとめてください。特に一般口座・法人・NISAで処理差があるかを、コードと業務資料の両方から突き合わせて説明してください。",
+    "golden": {
+      "correctness": [
+        "一般口座の税率は国税15.315%と地方税5%で、口座種別別の税率テーブルに定義されている。",
+        "法人は地方税を課さず、国税のみを適用する口座種別として扱われる。",
+        "NISA口座は通知文書で非課税対象とされ、源泉税計算では課税対象外になる。",
+        "端数処理は国税額と地方税額を合算後に丸めるのではなく、それぞれ個別に計算して切り捨てる。"
+      ],
+      "completeness": [
+        "税額計算式として、利息額に国税率・地方税率を別々に乗じ、それぞれ切り捨てた後に合算することを示している。",
+        "根拠として、口座種別別の税率テーブルと、NISA非課税を定めた通知文書の両方を挙げている。",
+        "法人について、一般口座の合計税率を単純適用する読み方が誤りである理由を説明している。"
+      ]
+    }
+  },
+  {
+    "task_id": "S10-R27",
+    "scenario": "s10-tax",
+    "catalog_id": "R27",
+    "tier": 1,
+    "mechanic": "provenance",
+    "grading": "answer-judged",
+    "prompt": "利息の源泉徴収額が一部口座で1円ずれるという照会が来ています。現行ロジックが口座種別ごとの税率、NISA非課税、端数処理の業務ルールに合っているか、根拠資料と該当箇所を確認して説明してください。",
+    "golden": {
+      "correctness": [
+        "D-1604 requires withholding tax rounding to be performed separately for each tax component: NATIONAL-TAX-AMT = TRUNC(gross × national-rate) and LOCAL-TAX-AMT = TRUNC(gross × local-rate), each truncated independently to whole yen.",
+        "TOTAL-TAX-AMT must be calculated as NATIONAL-TAX-AMT + LOCAL-TAX-AMT after the two independent truncations, not by truncating gross × (national-rate + local-rate).",
+        "The shipped/pre-change START logic is incorrect because it computes the combined total tax first and truncates once, which can overstate the total withholding by up to 1 yen compared with the mandated separate-truncation treatment.",
+        "The authoritative source for this rule is KZ-MIN-ROUND."
+      ],
+      "completeness": [
+        "A thorough answer identifies the relevant START calculation path and distinguishes normal taxable accounts from NISA-exempt accounts and per-account-type rates.",
+        "It should include the exact formula contrast: separate national/local truncation versus single combined-rate truncation.",
+        "It should explain that the separate truncation is regulator-mandated 円未満切捨て per tax, so a naive combined-rate calculation is not equivalent."
+      ]
+    }
+  },
+  {
+    "task_id": "S11-1",
+    "scenario": "s11-hft-risk",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらい証券のHFT発注ゲートウェイ(mihft_*) の発注前リスク判定が、現行の承認済み与信方針と一致していません。 各注文が正しく ACCEPT / REJECT されるよう該当ロジックを修正してください。判定の根拠となる規則は複数モジュールに分散しています。",
+    "engine": [
+      "mihft_risk.c"
+    ],
+    "verify_dir": "benchmark/scenarios/s11-hft-risk/verify",
+    "golden": {
+      "expected_fix": [
+        "1件あたりの想定元本 (notional = qty × price) が上限 MIHFT_MAX_NOTIONAL を超える注文は謝絶 (REJECT, コード8) する。",
+        "必要証拠金は「グループ利用可能額 (group_limit − group_used)」と比較する。証券口座のみのビュー (group_limit − acct_used) は使わない。",
+        "必要証拠金 = notional × rate(tier) / 10000。超過時は REJECT-MARGIN (コード4)。"
+      ],
+      "completeness": [
+        "判定本体は mihft_risk.c の mihft_risk_eval にあり、修正対象はこのファイルである。",
+        "想定元本上限 MIHFT_MAX_NOTIONAL と証拠金率は mihft_types.h の #define に定義されている (コード内・非文書)。",
+        "利用可能額の算定 (グループ/口座) は mihft_margin.c にあり、グループ側 (mihft_group_available) を使う必要がある。"
+      ]
+    }
+  },
+  {
+    "task_id": "S12-1",
+    "scenario": "s12-hft-matching",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "マッチングエンジンで、同一価格帯における同値約定の消化順（優先順位）が承認済みの方針と異なっています。価格帯の順序付けと約定選択は別モジュールに分かれています。約定選択ロジックを承認済みの優先順位規則に沿うよう修正してください。",
+    "engine": [
+      "mihft_match.c"
+    ],
+    "verify_dir": "benchmark/scenarios/s12-hft-matching/verify",
+    "golden": {
+      "expected_fix": [
+        "同一価格帯では到着順 (FIFO = time priority) に約定する。最大数量の板を優先する size-priority は誤り。",
+        "板は価格優先、同値では時間優先で消化する (price-time priority)。"
+      ],
+      "completeness": [
+        "約定選択ロジックは mihft_match.c にあり、修正対象である (FIFO=到着順で先頭から充当)。",
+        "mihft_match.c には到着順の比較子 cmp_arrival が既にあるが報告順(stable report order)にしか使われておらず、約定選択は cmp_select（数量優先=size-priority）を用いている点が誤り。到着順で選択するよう修正する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S12-2",
+    "scenario": "s12-hft-matching",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "マッチングエンジンの有効期間(TIF)処理について、IOC / FOK / DAY それぞれの約定後の挙動がどうコードに 実装されているかを特定し、根拠（ファイル・該当ロジック）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "実際に分岐実装されているのは FOK のみ。mihft_match.c の fok_blocks() が、板の総数量が引け数量に満たない場合 (resting_total < incoming) に約定を一切行わない (all-or-none)。",
+        "IOC・DAY には専用の約定後処理がなく、incoming 注文の未約定残はどの TIF でも板に載せず破棄される (約定ループ後に rem は保持されない)。",
+        "結果として IOC（未約定残の取消）は実質的に成立するが、DAY（未約定残を板に残す）は実装されておらず、TIF 約定後処理は未完成 (status: pending)。"
+      ],
+      "completeness": [
+        "ソースのコメント (mihft_match.c:24-26) は IOC=残取消 / FOK=all-or-none / DAY=板に残す と記すが、実行ロジックは FOK 分岐のみで、コメントどおりには実装されていない。",
+        "分岐判断材料は注文の TIF-CODE 列挙 (DAY / IOC / FOK) である。列挙値自体は業務文書 (ICD/設計ガイド/議事録) にも記載があるが、TIF ごとの「約定後挙動」は文書では「実装に従う」とされ規定がなく、実際の挙動はコードに依拠する (code-implicit)。"
+      ]
+    }
+  },
+  {
+    "task_id": "S13-1",
+    "scenario": "s13-hft-orderbook",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "注文価格のティックサイズ検証が一部の銘柄階層で誤っています。権威あるティックサイズ定義に従って検証されるよう 修正してください。コード内に重複したティック表が存在します。",
+    "engine": [
+      "mihft_book.c"
+    ],
+    "verify_dir": "benchmark/scenarios/s13-hft-orderbook/verify",
+    "golden": {
+      "expected_fix": [
+        "注文価格は銘柄階層の権威あるティックサイズの整数倍でなければならない (×100 minor units: T1=100[¥1], T2=500[¥5], T3=1000[¥10])。",
+        "階層2 (tier 2) の正しい刻みは ¥5 (500)。¥1 刻みは誤り。違反は REJECT-TICK (コード12)。"
+      ],
+      "completeness": [
+        "権威あるティック定義は mihft_tick.c (SCINSTF 由来) にある。",
+        "mihft_book.c が独自の stale なローカルティック表 (tier 2 = ¥1) を持っており、これを権威定義に整合させるのが修正点。"
+      ]
+    }
+  },
+  {
+    "task_id": "S14-1",
+    "scenario": "s14-hft-position",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "建玉の平均取得単価が誤って算出されています。承認済みの方式で計算されるよう修正してください。正しいロジックは コード内に存在するものの到達していない可能性があります。",
+    "engine": [
+      "mihft_pos.c"
+    ],
+    "verify_dir": "benchmark/scenarios/s14-hft-position/verify",
+    "golden": {
+      "expected_fix": [
+        "平均取得単価は、各約定の『約定数量 × 約定単価』の総和を、約定数量の絶対値の総和 (Σ|fill_qty|) で除した加重平均で算定する。売買が相殺する建玉でも正の単価となる。最終約定単価をそのまま用いる現行の稼働パスは誤り。"
+      ],
+      "completeness": []
+    }
+  },
+  {
+    "task_id": "S15-1",
+    "scenario": "s15-hft-grouprisk",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらい証券のグループ与信集計サービスで、顧客のエクスポージャー算定が承認済みのリスク集計方式と一致せず、過小評価となっています。 該当ロジックを特定し、承認済みの方式で正しく算定されるよう修正してください。",
+    "engine": [
+      "GroupRiskService.java"
+    ],
+    "verify_dir": "benchmark/scenarios/s15-hft-grouprisk/verify",
+    "golden": {
+      "expected_fix": [
+        "グループ・エクスポージャは各建玉の |net_qty| × price の総和 (グロス) で算定する。",
+        "ロングとショートを相殺 (ネッティング) してはならない (符号付き合算は過小評価)。"
+      ],
+      "completeness": [
+        "対象は GroupRiskService.java の aggregateGrossExposure / grossExposure。",
+        "一建玉あたりの寄与を絶対値 (Math.abs(net_qty) × price) にするのが修正点。"
+      ]
+    }
+  },
+  {
+    "task_id": "S15-2",
+    "scenario": "s15-hft-grouprisk",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "約定手数料を計算しているモジュールを特定し、手数料の算定方法（料率・最低手数料の扱い）をコードの根拠とともに 説明してください。",
+    "golden": {
+      "correctness": [
+        "約定手数料は mihft_fee.c で計算される。",
+        "commission = 約定代金 (fill notional) × FEE-RATE(board)、ただし MIN-FEE-AMT を下限とする (floor)。"
+      ],
+      "completeness": [
+        "料率と最低手数料は SCFEEF (fee schedule) から BOARD-CODE をキーに引く。",
+        "算定根拠 (式・下限) はコード内にあり、業務文書には算定式は記載されていない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S16-1",
+    "scenario": "s16-hft-settlement",
+    "catalog_id": "1",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "約定の受渡日（決済日）を計算しているプログラムを特定し、その入出力ファイルとともに コードの根拠を示してください。",
+    "golden": {
+      "correctness": [
+        "受渡日（決済日）を計算しているのは scsettle（PL/I 決済バッチ、受渡日計算・決済指図）である。"
+      ],
+      "completeness": [
+        "scsettle は SCEXEC（約定）と SCCALF（取引所カレンダー）を読み、SCSETL（決済指図）へ出力する。",
+        "受渡日を計算して SCSETL（決済指図）へ出力・確定させる生成元は scsettle のみである（ネッティング・経路解決・配信制御等は受渡日を生成しない）。なお custody のロック解放バッチ mihft_custody_lock_release は受渡日規則を突合検証のため再計算するが、決済指図の生成は行わない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S16-2",
+    "scenario": "s16-hft-settlement",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "約定の受渡日（決済日）の算定規則が、決済バックオフィスの PL/I コードにどのように 実装されているかを特定し、根拠（ファイル・該当ロジック）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "受渡日 = 約定日（TRADE-DT）の2営業日後（T+2）である。",
+        "T+2 が取引所の休業日（SCCALF の SESS-KBN=H）に当たる場合は、翌営業日へ繰り延べる（forward roll）。"
+      ],
+      "completeness": [
+        "受渡日規則の権威ある算定は scsettle（PL/I）が担う（決済指図の生成元）。PL/I はコンパイル不可のため、コードを読解して特定する必要がある（cross-language）。",
+        "営業日／休業日の判定は取引所カレンダー SCCALF を参照する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S16-3",
+    "scenario": "s16-hft-settlement",
+    "catalog_id": "3",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "ある約定（階層2(tier2)銘柄、約定単価は正しいティックの整数倍）について、(1) その約定単価が 妥当か（ティック検証）と、(2) 受渡日（決済日）がいつになるかを確定したいです。とくに約定日の2営業日後が ゴールデンウィークのような連続する休業日（祝日クラスタ）に当たる場合、受渡日はどう決まりますか。価格の 妥当性検証と受渡日算定それぞれについて、権威ある定義がどのプログラム（言語）にあるかを根拠とともに 説明してください。",
+    "golden": {
+      "correctness": [
+        "価格検証: 約定/注文価格は銘柄階層の権威あるティックサイズの整数倍でなければならない。tier2 の正しい刻みは ¥5（×100 minor units で 500）。権威定義は C の mihft_tick.c（SCINSTF 由来）。¥5 の整数倍でない価格は REJECT-TICK（コード12）。",
+        "受渡日: 約定日（EX-TRADE-DT）の T+2（2営業日後）。T+2 が取引所休業日（SCCALF の SESS-KBN='H'）に当たる場合は翌営業日へ前進繰延（forward roll）。ゴールデンウィークやお盆のように休業日が複数連続する祝日クラスタでは、営業日が見つかるまで1日ずつ前進を繰り返してクラスタ全体を飛び越す（1日だけの繰延では不十分）。算定は PL/I の scsettle。",
+        "2つの権威は別言語・別モジュールに分かれる: ティックは C（mihft_tick.c）、受渡日は PL/I（scsettle、コンパイル不可・読解必須）。単一モジュールのショートカットでは解けない。"
+      ],
+      "completeness": [
+        "営業日カウントでも休業日はスキップする（休業日は営業日として数えない＝T+2は営業日ベースで2日後）。受渡日は約定 SCEXEC から SCSETL（ST-SETL-DT）へ出力され、EX-EXEC-ID で約定と紐付く。",
+        "ティックの権威定義は mihft_tick.c にあり、mihft_book.c のローカルティック表は tier2=¥1(100) と stale で誤り。価格検証はこの stale 表ではなく mihft_tick.c の定義に従う。"
+      ]
+    }
+  },
+  {
+    "task_id": "S17-1",
+    "scenario": "s17-card-billing",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいカードの請求サイクル締めで、請求明細の最低支払額が現行の承認済み方針と一致していません。 承認済みの算定方式に従って最低支払額が正しく算出されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "CB910S.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s17-card-billing/verify",
+    "golden": {
+      "expected_fix": [
+        "最低支払額 = max( 締後残高(CLOSING-BAL-AMT) × 約定率, 最低支払額 ) で算定する。",
+        "改定後の約定率は 5% である（改定前の 3% は誤り）。",
+        "最低支払額の下限は 2,000円 である（下限を適用しないのは誤り）。",
+        "率を乗じた後に円未満を切り捨て、その上で最低支払額を下限として適用する。"
+      ],
+      "completeness": [
+        "算定は請求確定バッチ CB110B が最低支払額算定サブ CB910S を呼び出して行う。",
+        "確定値（約定率5%・最低支払額2,000円）の所管文書は債権管理規程 CD-RULE-MINPAY（稟議 CD-RINGI-MINPAY 決裁）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S17-2",
+    "scenario": "s17-card-billing",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "請求サイクルの最低支払額を算定しているプログラムを特定し、その約定率・最低支払額の確定値が どの文書で定められているか（根拠）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "最低支払額を算定しているのは請求確定バッチ CB110B（最低支払額算定サブ CB910S を呼出）である。",
+        "約定率・最低支払額の確定値の所管文書（doc-of-record）は債権管理規程 CD-RULE-MINPAY であり、改定は稟議 CD-RINGI-MINPAY で決裁された。"
+      ],
+      "completeness": [
+        "改定後は約定率5%・最低支払額2,000円（改定前は約定率3%・下限なし）。",
+        "オンライン与信(RPG)・会員サービス(Java)は最低支払額の算定を行わない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S18-1",
+    "scenario": "s18-card-authorization",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいカードのオーソリ与信判定で、利用可能枠の算定が承認済みの方針と一致せず過剰承認が発生しています。 承認済みの方式で利用可能枠が算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "AuthService.java"
+    ],
+    "verify_dir": "benchmark/scenarios/s18-card-authorization/verify",
+    "golden": {
+      "expected_fix": [
+        "利用可能枠 = 与信限度(CREDIT-LIMIT) − 現残高(CURRENT-BAL-AMT) − 有効な未確定オーソリ・ホールド合計 で算定する。",
+        "現行は未確定ホールドを差し引いておらず（限度−残高のみ）、過剰承認となっているのが誤り。",
+        "オーソリ金額 ≤ 利用可能枠 なら承認(A)、超過なら否認(D・理由 LIM)。"
+      ],
+      "completeness": [
+        "算定は Java の AuthService が行う（RPGオンライン前段・COBOLバッチは利用可能枠を再計算しない）。",
+        "有効ホールドの定義 = AU-AUTH-RESULT='00'（承認済・未確定）かつ HOLD-EXP-DT が判定日以降、通貨 JPY。"
+      ]
+    }
+  },
+  {
+    "task_id": "S18-2",
+    "scenario": "s18-card-authorization",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "オーソリ時の利用可能枠を算定しているプログラムを特定し、未確定オーソリ・ホールドがコード上で どのように扱われているかを、根拠（ファイル・該当ロジック）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "オーソリ判定時に利用可能枠（availableを算定してオーソリ金額と突合し承認/否認する）を算定しているのは Java の AuthService（computeAvailable）である。",
+        "AuthService は利用可能枠を『与信限度(creditLimit) − 現残高(currentBalAmt)』のみで算定しており、有効なオーソリ・ホールドを差し引いていない（ホールドが判定に反映されていない）。"
+      ],
+      "completeness": [
+        "承認済みの方針（方針整備検討会 議事録 CD18-MIN-001）では『与信限度 − 現残高 − 有効なオーソリ・ホールド合計』で算定すると定めており、現行コードはこの方針から乖離している（AU-AUTH-RESULT='00' の有効ホールドを控除していない）。",
+        "ホールド情報は CDAUTHF / 応答 CDARSPF に保持される（有効ホールドの単純合算は AuthHoldStore.activeHoldTotal が担うが、これはユーティリティであり承認判定は行わない）。",
+        "同じくオーソリ応答を返す AuthGatewayService も available を持つが、これは publishedLimit=与信限度のみ（現残高もホールドも減算しない）別系統のゲートウェイであり、方針が対象とする『与信限度−現残高』の枠算定エンジンではない。照会系の LimitInquiryService（与信限度＋一時増枠−現残高）もオーソリ判定経路ではない。",
+        "会員照会系の AvailableCreditService もホールドを差し引いた利用可能枠を算定するが、これは会員表示用の照会サービスであり（かつ引当中金額を全通貨で合算する照会独自ロジックで、方針が定める JPY 建て有効ホールドの定義とは異なる）、オーソリ判定エンジンそのものではない。修正対象は AuthService である。"
+      ]
+    }
+  },
+  {
+    "task_id": "S19-1",
+    "scenario": "s19-card-capture",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいカードの売上確定で、海外利用の事務手数料が現行の承認済み料率と一致せず過少請求になっています。 承認済みの料率で海外利用の請求額が算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "CB590S.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s19-card-capture/verify",
+    "golden": {
+      "expected_fix": [
+        "海外利用(非JPY)の請求額 = 売上額 + 切捨て(売上額 × 海外利用事務手数料率) で算定する。",
+        "改定後の海外利用事務手数料率は 2.20% である（改定前の 1.60% は誤り）。",
+        "料率を乗じた後に円未満を切り捨てる。国内(JPY)利用には事務手数料を課さない（手数料0）。"
+      ],
+      "completeness": [
+        "算定は 売上確定バッチ CB510B が 手数料算定サブ CB590S を呼び出して行う。",
+        "料率の確定値(2.20%)の所管文書は 海外利用に関する手数料規程 CD-RULE-FXFEE（稟議 CD-RINGI-FXFEE 決裁）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S19-2",
+    "scenario": "s19-card-capture",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "海外利用の事務手数料を算定しているプログラムを特定し、その料率がどの文書で定められているか （根拠）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "請求額（売上額＋手数料）を確定して計上する売上確定バッチ CB510B が、手数料算定サブ CB590S を呼び出して海外利用事務手数料を算定・計上している。",
+        "料率の所管文書（doc-of-record）は 海外利用に関する手数料規程 CD-RULE-FXFEE であり、改定は稟議 CD-RINGI-FXFEE で決裁された。"
+      ],
+      "completeness": [
+        "改定後は 2.20%（改定前は 1.60%）。国内(JPY)は手数料対象外。",
+        "計上後の売上検証ドライバ CB104B も CB590S を呼び出すが、これは手数料の戻り値(LK-FX-RET)を検証して異常時に例外レコードを書くだけで、請求額の算定・計上は行わない（算定・計上の所管は CB510B）。",
+        "オンライン(RPG)・会員サービス(Java)は本算定を行わない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S2-C4",
+    "scenario": "s2-remittance",
+    "catalog_id": "C4",
+    "tier": 2,
+    "mechanic": "new-transaction-type",
+    "grading": "behavioral",
+    "prompt": "全銀の被仕向送金取込で、仕様書どおりに不備データを分類して否認し、訂正可能なものは後続の訂正送信に回るよう実装してください。分類基準と訂正電文の出力条件は現行資料と既存処理を確認し、既存の正常取込・照会系の動作は変えないでください。",
+    "engine": [
+      "TG330B",
+      "TG931S"
+    ],
+    "verify_dir": "benchmark/scenarios/s2-remittance/verify",
+    "golden": {
+      "expected_fix": [
+        "変更対象は訂正送金バッチ TG330B（署名生成サブルーチン TG931S を呼び出す）。",
+        "TG330B は被仕向訂正(REMIT-TYPE=90)を訂正種別（IR-REMIT-MSG 先頭2桁＝01名義/02口座/03銀行）ごとに検証し、妥当な訂正のみ TGOUTCF に全銀固定長の訂正電文として出力する（現行コードは TGOUTCF を出力せず種別90をスキップしている）。",
+        "出力電文の署名(OC-OC-SIGNATURE)は、承認済み議事録(TG-MIN-SIG)どおり 店番＋処理日＋原センタSEQ＋金額 から TG931S が生成した値を格納する。",
+        "不備のある訂正（訂正区分不正・金額上限超過・口座不正など）は TGOUTCF に出力しない。既存の通常送信・再送・照会系トランザクションの出力は変えない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S2-P3",
+    "scenario": "s2-remittance",
+    "catalog_id": "P3",
+    "tier": 1,
+    "mechanic": "code-partial->doc-completes",
+    "grading": "answer-judged",
+    "prompt": "全銀の入金照合で、現行は一部の不一致だけを扱っているように見えます。承認済みの拒否分類に沿って、どの検証失敗をどの拒否コードで出すべきか、根拠資料と該当処理を確認して整理してください。",
+    "golden": {
+      "correctness": [
+        "Authoritative taxonomy is D-0804 from TG-SPEC-REJ.",
+        "Reject codes must be N1=name-mismatch, A1=no-account, A2=bad-account-status, F1=format-invalid, L1=amount-over-limit, S1=unsupported-type.",
+        "Each inbound 全銀 validation failure must be mapped to and emitted/logged with its corresponding reject code; the current behavior emitting only N1 is incomplete."
+      ],
+      "completeness": [
+        "Identifies TG-SPEC-REJ as the authoritative source for the approved reject taxonomy.",
+        "Explains that the pre-change code path only classifies name mismatch as N1 while other validation failures fall through to generic skip/continue without classification or reject logging.",
+        "Mentions that the outbound 訂正 path should use the same approved reject classification for rejected inbound remittances."
+      ]
+    }
+  },
+  {
+    "task_id": "S2-PC2",
+    "scenario": "s2-remittance",
+    "catalog_id": "PC2",
+    "tier": 2,
+    "mechanic": "partial-code-completion",
+    "grading": "behavioral",
+    "prompt": "全銀の被仕向送金取込（TG214B）で、受信データの不備を銀行内で承認済みの分類に従ってリジェクトし、否認ログに記録されるよう実装してください。分類基準は現行資料と既存実装に合わせ、既存の正常取込動作は変えないでください（訂正電文の出力は別バッチの担当で本タスクの対象外）。",
+    "engine": [
+      "TG214B"
+    ],
+    "verify_dir": "benchmark/scenarios/s2-remittance/verify",
+    "golden": {
+      "expected_fix": [
+        "変更対象は TG214B である。",
+        "全銀被仕向送金の入力検証で、不備データを承認済みリジェクト分類（N1/A1/A2/F1/L1/S1）にマッピングして否認ログ（TGREJLF）へ記録する。",
+        "現行は名義不一致(N1)のみを分類しており、その他の検証失敗は分類・否認ログ化されずに素通りしている点を是正する。",
+        "正常な被仕向送金は従来どおり受理され、否認ログに流れない。訂正電文(TGOUTCF)の出力は訂正送金バッチ TG330B の担当で本タスクの対象外。"
+      ]
+    }
+  },
+  {
+    "task_id": "S2-R5",
+    "scenario": "s2-remittance",
+    "catalog_id": "R5",
+    "tier": 1,
+    "mechanic": "locate",
+    "grading": "answer-judged",
+    "prompt": "全銀の被仕向送金について、受入時に口座情報と突合して不備を承認済みの却下分類へ振り分け、却下明細を出力している既存バッチを特定してください。訂正系の外向き経路を追加する前提で、根拠となる入出力ファイルも併せて示してください。",
+    "golden": {
+      "correctness": [
+        "対象プログラムは TG214B。",
+        "TG214B は被仕向送金検証バッチである。",
+        "TG214B は TGINRMF と KZACCTF を読み込む。",
+        "TG214B は TGREJLF を出力する。"
+      ],
+      "completeness": [
+        "被仕向送金の受入検証、口座突合、不備送金の却下分類への振り分けを担う既存処理として説明している。",
+        "却下明細または却下ログの出力先が TGREJLF であることを明示している。",
+        "コード上のファイル定義や設計資料・業務文書の記述を根拠として挙げている。"
+      ]
+    }
+  },
+  {
+    "task_id": "S2-R6",
+    "scenario": "s2-remittance",
+    "catalog_id": "R6",
+    "tier": 1,
+    "mechanic": "cross-modal-link",
+    "grading": "answer-judged",
+    "prompt": "全銀の被仕向送金チェックで、受取人名義の不一致リジェクトが過検知している疑いがあります。現行COBOLと関連資料を確認し、名義比較前に適用すべき正規化仕様を特定して、実装・レビューで参照できる形で答えてください。",
+    "golden": {
+      "correctness": [
+        "D-0802 が対象ルールであることを特定している。",
+        "受取人名義比較の前に、比較対象の両方の名義へ同じ正規化を適用する必要があると述べている。",
+        "正規化内容として、全角カナ・英数・記号を全銀半角へ変換すること、濁点・半濁点表現を統一すること、連続スペースを半角スペース1個へ畳み込んで前後をトリムすること、法人略語を承認済み表に従って折りたたむことをすべて含めている。",
+        "法人略語の例として、株式会社を ｶ に折りたたむことを含めている。"
+      ],
+      "completeness": [
+        "権威資料が TG-MIN-KANA であることを示している。",
+        "この正規化を省いた単純な文字列比較では、表記揺れによる誤リジェクトが発生することを説明している。",
+        " inbound 全銀 remittance の受取人名義不一致リジェクト判定に関わる仕様として位置づけている。"
+      ]
+    }
+  },
+  {
+    "task_id": "S2-R7",
+    "scenario": "s2-remittance",
+    "catalog_id": "R7",
+    "tier": 1,
+    "mechanic": "cross-modal-link",
+    "grading": "answer-judged",
+    "prompt": "全銀の被仕向送金バリデーションでエラー判定された明細について、承認済みの却下理由分類がどの出力項目に設定され、後続の送信・返戻処理に渡されるのかを特定してください。関連する業務資料とCOBOL実装を突き合わせて、項目名で回答してください。",
+    "golden": {
+      "correctness": [
+        "The rejected-remittance reason is carried in dataset/record field `TGREJLF.REJ-REASON`.",
+        "The answer must identify `REJ-REASON` as the field that stores the approved rejection taxonomy reason for bad inbound Zengin remittances.",
+        "the reject/list output whose reason field is consumed downstream by the outbound-send / return processing (TG260B / TG340B). The 訂正 correction batch (TG330B) does NOT read TGREJLF; it re-derives reject reasons independently from TGINRMF, so an answer noting that independence is correct."
+      ],
+      "completeness": [
+        "Cites the business document or taxonomy table that defines the approved rejection reasons and maps them to the reject output.",
+        "the later outbound/return consumer of the reject-reason field (TG260B outbound-send / TG340B return queue), rather than the 訂正 correction batch which re-derives reasons independently.",
+        "Explains why merely citing the validation error flag/code is insufficient: the required handoff field is the reject-list reason field, not the transient validation status."
+      ]
+    }
+  },
+  {
+    "task_id": "S20-1",
+    "scenario": "s20-card-payment",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいカードの入金消込で、受領した入金の構成別(手数料・利息・元本)への充当順序が承認済みの方針と 一致せず、優先度の高い構成が消し込まれないまま残っています。承認済みの順序で充当されるよう、該当ロジックを 修正してください。",
+    "engine": [
+      "CB610B.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s20-card-payment/verify",
+    "golden": {
+      "expected_fix": [
+        "受領した入金は 手数料(FEE-BAL-AMT) → 利息(INTEREST-BAL-AMT) → 元本(PRINCIPAL-BAL-AMT) の順に充当する。",
+        "各構成を満額消し込んでから次の構成へ進む（構成ごとに残額の範囲で充当する）。",
+        "現行は元本から先に充当しており（元本→利息→手数料）、手数料・利息が残るのが誤り。"
+      ],
+      "completeness": [
+        "入金総額が未収残高合計を超える分は過入金（APP-STATUS=O）、未収が無ければ対象外（S）として扱う。",
+        "構成別の充当結果（APPLIED-FEE-AMT/APPLIED-INT-AMT/APPLIED-PRIN-AMT・REMAIN-AMT）は CDAPPF に出力する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S20-2",
+    "scenario": "s20-card-payment",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "入金の充当順序(手数料・利息・元本)を決めているプログラムを特定し、(1)現行コードが受領入金を各構成に どの順序で充当しているか、(2)承認済みの方針ではどの順序と定められており、その根拠がどの文書にあるか を、根拠（ファイル・該当ロジック・文書）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "充当順序を決めているのは COBOL の入金消込バッチ CB610B である。",
+        "現行コードは受領入金を『元本 → 利息 → 手数料』(元本優先) の順で充当している。",
+        "承認済みの方針では『手数料 → 利息 → 元本』の順（優先度の高い構成から満額消込）と定められており、その根拠は 入金消込 充当方式 検討会 議事録 CD20-MIN-001 にある（現行コードはこれと逆順で、コードからは承認順序を導出できない）。"
+      ],
+      "completeness": [
+        "オンライン(RPG)・会員サービス(Java)は再充当を行わず、CB610B が所管する。",
+        "各構成を満額消し込んでから次の構成へ充当し、超過分は過入金(APP-STATUS=O)として扱う。"
+      ]
+    }
+  },
+  {
+    "task_id": "S21-1",
+    "scenario": "s21-card-revolving",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいカードのリボ払い(残高スライド定額方式)で、月々の元金定額が承認済みの改定後の表と一致せず、 旧い区分・金額のまま算定されています(元金の回収が過少)。承認済みの残高スライド表で月々の元金定額が 算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "CB290S.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s21-card-revolving/verify",
+    "golden": {
+      "expected_fix": [
+        "月々の元金定額 PRIN-AMT は リボ残高(サイクル末残高)に応じた残高スライド表で決まる。",
+        "改定後の元金定額は 残高10万円以下=5,000円、10万円超30万円以下=10,000円、30万円超50万円以下=15,000円、50万円超=20,000円である。",
+        "残高帯の上限は当該額を含む(以下判定)。旧表(≤20万=3,000、≤50万=6,000、50万超=10,000)のままは誤り。"
+      ],
+      "completeness": [
+        "リボ手数料は 月々の元金定額とは別に 残高×月利1.25%(実質年率15.0%)を円未満切捨てで加算し、請求額=元金定額+手数料(月利は本改定の対象外)。",
+        "有効口座(REV-STATUS=01)のみ確定し、一時停止/解約(02/03)は対象外(RSLD-STATUS=S)。"
+      ]
+    }
+  },
+  {
+    "task_id": "S21-2",
+    "scenario": "s21-card-revolving",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "リボ払いの月々の元金定額(残高スライド定額)を算定しているプログラムを特定し、その元金定額表が どの文書で定められているか(根拠)とともに、改定後の残高帯別の金額を説明してください。",
+    "golden": {
+      "correctness": [
+        "月々の元金定額を算定しているのは リボ残高スライド確定バッチ CB210B（元金定額算定サブ CB290S を呼出）である。",
+        "元金定額表の所管文書(doc-of-record)は リボ払い規程 CD-RULE-REVSLIDE であり、改定は稟議 CD-RINGI-REVSLIDE で決裁された。",
+        "改定後の残高帯別 元金定額: ≤10万=5,000、≤30万=10,000、≤50万=15,000、50万超=20,000円。"
+      ],
+      "completeness": [
+        "残高帯の上限は当該額を含む(以下)。手数料は月利1.25%で別途加算(本改定の対象外)。",
+        "オンライン(RPG)・会員サービス(Java)はリボ元金/スライドを算定しない（CB210B/CB290S が所管）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S21-3",
+    "scenario": "s21-card-revolving",
+    "catalog_id": "3",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "リボ払い利用中のカード会員の月次明細を作成するにあたり、(1) リボ払いの月々の元金定額と手数料、 および (2) 請求サイクルの最低支払額 の両方を確定する必要があります。それぞれの確定値（残高帯別の元金定額、 最低支払額の算定方式）と、それぞれの所管文書(doc-of-record)が何かを、根拠（プログラム・文書名）とともに 説明してください。両者は別々の規程で定められている点にも触れてください。",
+    "golden": {
+      "correctness": [
+        "リボ払いの月々の元金定額(残高スライド定額)：残高帯→元金定額 = ≤10万円=5,000、≤30万円=10,000、≤50万円=15,000、50万円超=20,000(上限は当該額を含む=以下判定)。手数料 = リボ残高×月利1.25%を円未満切捨てで別途加算。算定は CB210B(CB290S を呼出)。所管文書は リボ払い規程 CD-RULE-REVSLIDE(XLSX、稟議 CD-RINGI-REVSLIDE で決裁)。",
+        "請求サイクルの最低支払額：max( 切捨て(締後残高 CLOSING-BAL-AMT × 約定率5%), 最低支払額 2,000円 )。算定は CB110B(CB910S を呼出)。所管文書は 債権管理規程 CD-RULE-MINPAY(稟議 CD-RINGI-MINPAY で決裁)。",
+        "両者は別個の doc-of-record。リボの残高スライド表(CD-RULE-REVSLIDE)と最低支払額の約定率/下限(CD-RULE-MINPAY)を相互に取り違えてはならない(残高スライド表を最低支払額に使う/5%・¥2,000をリボ元金定額に使う、はいずれも誤り)。"
+      ],
+      "completeness": [
+        "いずれも改定後の値である。旧値(リボ ≤20万=3,000/≤50万=6,000/50万超=10,000、最低支払額 約定率3%・下限なし)のままは誤り。",
+        "確定値はいずれも規程(doc-of-record)にのみ存在する(Family A)。オンライン(RPG)・会員サービス(Java)はこれらを算定しない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S22-1",
+    "scenario": "s22-card-overseas",
+    "catalog_id": "1",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "海外ATMでの現金引出（海外キャッシング）について、オンライン認証から確定・会員表示までの一連の 処理を担うプログラムを特定し、取引にどの取引区分が付与されるかを、根拠（プログラム・ファイル・該当ロジック） とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "海外ATM(CHANNEL-KBN '04')の現金引出には、オンライン認証の RPG プログラム CA301R が 取引区分 TXN-KBN 'C2'(海外キャッシング)を付与する。",
+        "処理は言語横断: CA301R(RPG, 区分付与) → CB810B(COBOL, 確定・精算) → OverseasCashingService(Java, 会員表示) と連携する。"
+      ],
+      "completeness": [
+        "データは CDTXNF(取引明細) → CDOVSF(確定・精算結果) → CDMVWF(会員表示ビュー) と流れる。",
+        "取引区分の値とマッピングは文書には無く、コード（特に RPG の CA301R）を読んで特定する必要がある（code-cross-language）。",
+        "会員表示(Java)では C2/C1 を 表示区分 'K'(キャッシング)として見せるが、区分の付与は行わない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S22-2",
+    "scenario": "s22-card-overseas",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "海外ATM現金引出に付与される取引区分について、確定処理で利息の起算日と手数料がどのように扱われるかを、 国内・海外のショッピングとの違いも含め、根拠（ファイル・該当ロジック）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "海外ATM現金引出は取引区分 'C2' で、確定処理(COBOL CB810B)では利息の起算日が引出日（取引日 TX-TXN-DT）となる（無利息期間／猶予なし）。",
+        "C2 には海外ATM事務手数料（手数料区分 FEE-KBN 'FA'）が課される。",
+        "一方、ショッピング(TXN-KBN 'P1'/'P2')は利息が取引日から起算されず標準の猶予（締め基準日）で、手数料区分は '00'(なし)。"
+      ],
+      "completeness": [
+        "この区分別の利息起算・手数料の扱いは CB810B（COBOL）にのみ実装されており、文書には記載が無い（コード読解が必要）。",
+        "利息起算日は CDOVSF の INT-START-DT、手数料は FEE-KBN/FEE-AMT に出力される。"
+      ]
+    }
+  },
+  {
+    "task_id": "S22-3",
+    "scenario": "s22-card-overseas",
+    "catalog_id": "3",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "国内ATMでの現金引出・海外ATMでの現金引出・海外でのショッピングは、それぞれ取引区分の付与と 会員向け確定処理（精算対象の可否・利息の起算日・手数料）でどのように区別されますか。3つの区分の違いが 明確に分かるように、区分の付与箇所と確定処理の該当ロジックを根拠（プログラム・ファイル・該当箇所）とともに 説明してください。会員表示だけでは区別できない区分があれば、その理由にも触れてください。",
+    "golden": {
+      "correctness": [
+        "国内ATM現金引出は CA301R(RPG)で取引区分 'C1'(国内キャッシング)が付与される（CH_DOM_ATM かつ現金区分='1'）が、海外精算エンジン CB810B(COBOL)では「精算対象外取引区分」としてスキップされ、海外ATM事務手数料も付かない（CDOVSFに出力されない）。",
+        "海外ATM現金引出は 'C2'(海外キャッシング)で、CB810B は利息起算日を引出日（取引日 TX-TXN-DT）とし無利息期間／猶予なし、手数料区分 'FA' で海外ATM事務手数料（金額帯別 110/220/330/550円）を課す。",
+        "海外ショッピングは 'P2'(海外ショッピング)で、CB810B は手数料区分 '00'（手数料なし）とし、利息起算日を標準猶予日（取引日＋55日 = WS-STD-GRACE-DAYS）とする。"
+      ],
+      "completeness": [
+        "取引区分の付与は CA301R(RPG)の SetTxnKbn が チャネル区分×現金区分で判定する（CH_OVS_ATM/CH_DOM_ATM/CH_OVS_SHOP）。区分別の精算可否・利息起算・手数料は CB810B(COBOL)の EVALUATE にのみ実装され、文書には無い（cross-language / code-only）。",
+        "会員表示(Java OverseasCashingService)は C1 と C2 をともに表示区分 'K'(キャッシング)で見せるため、Java だけでは C1 と C2 を区別できない（RPG＋COBOLの読解が必要）。",
+        "C1 は海外精算 CDOVSF には現れず、確定・精算結果（INT-START-DT/FEE-KBN/FEE-AMT）が出るのは C2 と P2 のみである。"
+      ]
+    }
+  },
+  {
+    "task_id": "S23-1",
+    "scenario": "s23-pay-authorization",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいペイのウォレット与信オーソリ判定で、利用可能残高の算定が承認済みの方式と一致せず、 本来承認すべき取引が否認されています。承認済みの方式で利用可能残高が算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "AuthEngine.java"
+    ],
+    "verify_dir": "benchmark/scenarios/s23-pay-authorization/verify",
+    "golden": {
+      "expected_fix": [
+        "利用可能残高 = 確定残高(LEDGER-BAL-AMT) − 有効ホールド合計 − 未確定決済合計 で算定する。",
+        "有効ホールドは HD-HOLD-EXP-DT が基準日以降のもののみで、失効したホールド（基準日より前）は解放し控除しない。",
+        "現行は失効ホールドも含め全ての承認済ホールドを差し引いており、過剰に確保して本来承認可能な取引を否認しているのが誤り。",
+        "オーソリ金額 ≤ 利用可能残高 なら承認(A)、超過なら否認(D・理由 LIM)。"
+      ],
+      "completeness": [
+        "算定は Java の AuthEngine（jp.mirai.pay.authorization）が行う（C 決済バッチや他の Java サービスは再計算しない）。",
+        "有効ホールドの定義 = HD-HOLD-RESULT='00'（承認済）かつ通貨 JPY かつ HD-HOLD-EXP-DT が基準日以降。",
+        "未確定決済は PN-PEND-STATUS='10'（未確定）の合計を控除する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S23-2",
+    "scenario": "s23-pay-authorization",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "オーソリ時の利用可能残高を算定しているプログラムを特定し、オーソリ・ホールドが失効した場合に コード上でどのように扱われているかを、根拠（ファイル・該当ロジック）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "利用可能残高を算定しているのは Java の AuthEngine である。",
+        "現行コードは HD-HOLD-RESULT='00'(承認済) の JPY ホールドを失効有無にかかわらず全て差し引いており、失効ホールドを解放していない。"
+      ],
+      "completeness": [
+        "承認済みの方式（オーソリ判定検討会 議事録 PY23-MIN-001）では失効ホールド（HD-HOLD-EXP-DT が基準日より前）を解放し有効ホールドのみ控除すると定めており、現行コードはこの方式から乖離している。",
+        "関係データは PYHOLDF(ホールド) / PYPENDF(未確定決済)。"
+      ]
+    }
+  },
+  {
+    "task_id": "S24-1",
+    "scenario": "s24-pay-settlement",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいペイの加盟店精算で、決済処理手数料の円未満の丸めが承認済みの方式と一致せず、加盟店への 振込額が一部の加盟店で過大になっています。承認済みの方式で手数料が算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "mipay_settle.c"
+    ],
+    "verify_dir": "benchmark/scenarios/s24-pay-settlement/verify",
+    "golden": {
+      "expected_fix": [
+        "決済処理手数料 = 加盟店日次の集計ネット(売上Σ − 返金Σ)に料率(0.30%, 30bp)を乗じ、円未満を四捨五入して算定する。",
+        "現行は円未満を切捨て(floor)しており、端数が0.5以上の加盟店で手数料が1円少なく、振込額が1円過大になっているのが誤り。",
+        "振込額(PAYOUT-AMT) = ネット − 手数料。"
+      ],
+      "completeness": []
+    }
+  },
+  {
+    "task_id": "S24-2",
+    "scenario": "s24-pay-settlement",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "加盟店精算の決済処理手数料を算定しているプログラムを特定し、円未満の端数がコード上で どのように丸められているかを、根拠（ファイル・該当ロジック）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "手数料を算定しているのは C の mipay_settle（関数 mipay_proc_charge）である。",
+        "円未満の端数は四捨五入すべきだが、現行コードは切捨て(整数除算による floor)している。"
+      ],
+      "completeness": [
+        "料率は MIPAY_PROC_RATE_BP=30（ヘッダ定数）。丸め方法（円未満四捨五入・集計ネットに一度だけ）は 議事録 MIN-MP-SET-R06-014 の脚注に定められており、現行コードはこれと乖離して切捨てている（doc-code-drift）。",
+        "手数料は集計後のネットに対して一括で丸める（明細毎ではない）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S25-1",
+    "scenario": "s25-pay-fee",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいペイの加盟店手数料(MDR)の算定が、承認済みの改定後の料率と一致していません。承認済みの 業種区分別料率で手数料が算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "MdrFeeEngine.java"
+    ],
+    "verify_dir": "benchmark/scenarios/s25-pay-fee/verify",
+    "golden": {
+      "expected_fix": [
+        "改定後の業種区分別 MDR 料率を適用する: C1 一般物販=3.00%(300bp)、C2 飲食=3.24%(324bp)、C3 公共・公金=1.30%(130bp)、C4 EC・通信販売=3.74%(374bp)、C5 高リスク業種=4.00%(400bp)。",
+        "1取引あたりの手数料 = 取引額 × 料率、円未満切捨て（切捨ては据置で改定対象外）。",
+        "現行コードは旧料率(C1 3.25% / C2 3.25% / C3 1.50% / C4 3.60% / C5 3.95%)で算定しており誤り。"
+      ],
+      "completeness": [
+        "算定は Java の MdrFeeEngine（jp.mirai.pay.fee）が行い、業種区分は加盟店マスタ PFMERF の MR-MER-CATEGORY による。",
+        "請求対象は MR-MER-STATUS='01' の加盟店のみ。",
+        "改定後料率は加盟店手数料規程 CD-RULE-MDR（稟議 CD-RINGI-MDR で決裁）に定められ、コードのみからは復元できない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S25-2",
+    "scenario": "s25-pay-fee",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "加盟店手数料(MDR)を算定しているプログラムを特定し、業種区分別の手数料率がいくらで、その根拠と なる文書は何かを、根拠（ファイル・文書名）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "MDR を算定しているのは Java の MdrFeeEngine（メソッド mdrRateBp / feeFor）である。",
+        "改定後の業種区分別料率は C1=3.00%、C2=3.24%、C3=1.30%、C4=3.74%、C5=4.00%。"
+      ],
+      "completeness": [
+        "料率の根拠文書は加盟店手数料規程 CD-RULE-MDR（料率表 XLSX）であり、改定は稟議 CD-RINGI-MDR の決裁による。",
+        "料率値はソースコードには（改定後の正しい値が）無く、規程を参照しないと特定できない（source-invisible / Family A）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S25-3",
+    "scenario": "s25-pay-fee",
+    "catalog_id": "3",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "みらい信託銀行のカード手数料処理には、規制対応として「1請求サイクルあたりの過枠手数料に上限額を 設ける」運用上のコミットメントがあります（具体的な上限額は行内で決定）。これと同等の「サイクルあたり 手数料上限」が、みらいカードのリボ払い手数料や みらいペイの加盟店手数料(MDR) にも適用されているか どうかを、適用の有無と根拠（コード・規程の所在、または不在）とともに判定して説明してください。",
+    "golden": {
+      "correctness": [
+        "いいえ。みらいカードのリボ払い手数料（リボ確定バッチ CB210B / 元金定額算定 CB290S）にも、みらいペイの加盟店手数料 MDR（MdrFeeEngine）にも、サイクルあたりの手数料上限（頭打ち処理）は存在しない。当該上限は みらい信託銀行のカード手数料処理に固有で、他のグループ会社へは波及しない。",
+        "当該「1サイクルあたりの過枠手数料上限」は みらい信託銀行の議事録（カード手数料 規制対応の検討会）にのみ定義された source-invisible な事実で、行内の cap 適用処理（KZ115B）に閉じる。カード／ペイの規程・コードには対応する上限規定がない。",
+        "リボ手数料 = リボ残高 × 月利1.25%（円未満切捨て）＋ 残高スライドの元金定額のみ、MDR = 取引額 × 業種区分別料率（円未満切捨て）のみで、いずれもサイクル上限による頭打ちを持たない。"
+      ],
+      "completeness": [
+        "誤認の罠: みらいカードの督促制御 CB520S に定数 50000 が存在するが、これは督促コール（架電）へ移行する金額閾値であって手数料上限ではない。手数料 cap と混同してはならない。",
+        "これは「存在しないことの証明（absence / 否定）」であり、ある会社に上限があるからといって他社にも当然に適用されるという一般化は誤り。各社の手数料規程・コードに当該上限が無いことを確認して初めて「非適用」と結論できる。"
+      ]
+    }
+  },
+  {
+    "task_id": "S26-1",
+    "scenario": "s26-pay-refund",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらいペイの返金・チャージバック受付判定で、受付可能期間が承認済みの改定後の期間と一致せず、 本来受付可能な返金が否認されています。承認済みの受付可能期間で判定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "RefundEngine.java"
+    ],
+    "verify_dir": "benchmark/scenarios/s26-pay-refund/verify",
+    "golden": {
+      "expected_fix": [
+        "返金受付可能期間は改定後の180日とする（原取引日から180日以内、第180日まで受付可）。",
+        "現行コードは旧の90日で判定しており、90日超〜180日以内の返金を誤って否認(WIN)しているのが誤り。",
+        "否認区分・判定順（原取引なし TXN → 期間超過 WIN → 金額超過 AMT）は据置。"
+      ],
+      "completeness": [
+        "判定は Java の RefundEngine（jp.mirai.pay.refund、メソッド refundWindowDays）が行う。",
+        "返金額が原取引額を超える場合は AMT、原取引が存在しない場合は TXN で否認。",
+        "180日という期間は返金規程 CD-RULE-REFUND（稟議 CD-RINGI-REFUND で決裁）に定められ、コードのみからは復元できない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S26-2",
+    "scenario": "s26-pay-refund",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "返金・チャージバックの受付可否を判定しているプログラムを特定し、受付可能期間が何日で、その根拠と なる文書は何かを、根拠（ファイル・文書名）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "受付可否を判定しているのは Java の RefundEngine（refundWindowDays / decide）である。",
+        "改定後の受付可能期間は原取引日から180日（旧90日）。"
+      ],
+      "completeness": [
+        "期間の根拠文書は返金規程 CD-RULE-REFUND であり、改定は稟議 CD-RINGI-REFUND の決裁による。",
+        "期間の値はソースコードには（改定後の正しい値が）無く、規程を参照しないと特定できない（source-invisible / Family A）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S27-1",
+    "scenario": "s27-pay-trace",
+    "catalog_id": "1",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "みらいペイで、与信側のオーソリ・ホールドが売上確定された後、加盟店の精算ネットにどのように 反映されるかを、与信側(Java)と精算側(C)のコードを追跡して説明してください。ホールドと精算明細を結びつける 連携キーは何で、どのように生成されますか。根拠（ファイル・該当ロジック）も示してください。",
+    "golden": {
+      "correctness": [
+        "連携キーは SETTLE-TXN-ID であり、与信側 Java の CaptureLinkService が HOLD-ID から導出する（'S' + HOLD-ID の数字部分）。",
+        "売上確定済(HD-HOLD-STATUS='30')のホールドのみが売上確定リンク(PTCAPF)に変換され、精算側へ連携される。",
+        "精算側 C の mipay_nettrace は加盟店(merchant_code)別に、精算区分 SETTLE-KBN='1'（即時精算）の明細(PTSETF)のみを合算する。SETTLE-TXN-ID は与信側が付与する連携キーであり、C側の集計キーではない。"
+      ],
+      "completeness": [
+        "チェーンは Java(CaptureLinkService)と C(mipay_nettrace)に分かれて存在し、単一の文書には記載がない（code-cross-language）。",
+        "未確定('00')・取消('20')のホールドは連携されない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S27-2",
+    "scenario": "s27-pay-trace",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "加盟店の精算ネット額を算定する際、精算明細のうちどの精算区分(SETTLE-KBN)が計上対象となり、 どの区分が除外されますか。また、その精算区分は与信側でどのように付与されますか。根拠（ファイル）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "加盟店の精算ネットには 精算区分 SETTLE-KBN='1'（即時精算）のみが計上され、'2'（翌月繰越）と '9'（対象外）は除外される。",
+        "この '1' のみ計上の規則は C の mipay_nettrace（mipay_merchant_settled_net）に実装されている。",
+        "精算区分は与信側 Java の CaptureLinkService が付与する（加盟店コードが 'Z' で始まる加盟店は '2' 翌月繰越、その他は '1' 即時精算。金額しきい値で '2' を付ける CaptureImportService は別処理でありこの規則ではない）。"
+      ],
+      "completeness": [
+        "どの区分を計上するかは文書には無く、精算側コードを読まないと特定できない。区分の付与規則は与信側コードにある（両側の追跡が必要）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S28-1",
+    "scenario": "s28-ins-premium",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらい生命の月額保険料の算定が、承認済みの改定後の保険料率と一致していません。承認済みの 加入年齢帯×性別の料率で月額保険料が算定されるよう、該当ロジックを修正してください。",
+    "engine": [
+      "LF110B.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s28-ins-premium/verify",
+    "golden": {
+      "expected_fix": [
+        "改定後の加入年齢帯×性別の月額保険料率(保険金額¥1,000あたり月額, 円)を適用する: 20代 男性1.10/女性0.95、30代 男性1.65/女性1.40、40代 男性3.20/女性2.70、50代 男性6.40/女性5.20、60代 男性13.20/女性10.60。",
+        "月額保険料 = 保険金額(千円単位) × 当該料率、円未満切捨て（切捨て・年齢帯区分は据置で改定対象外）。",
+        "現行コードは旧料率(例: 40代男性3.00 / 50代男性6.00 / 60代男性12.50 等)で算定しており誤り。"
+      ],
+      "completeness": [
+        "算定は COBOL の LF110B（月額保険料計算バッチ）が行い、加入年齢は契約マスタ LFPOLF の PO-ENTRY-AGE-CNT、性別は PO-SEX-KBN による。",
+        "計算対象は PO-POL-STATUS-KBN='01'（有効）契約のみ。",
+        "改定後料率は月額保険料率規程 LF-RULE-PREM（稟議 LF-RINGI-PREM で決裁）に定められ、コードのみからは復元できない（source-invisible / Family A）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S28-2",
+    "scenario": "s28-ins-premium",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "月額保険料を算定しているプログラムを特定し、加入年齢帯×性別ごとの月額保険料率がいくらで、 その根拠となる文書は何かを、根拠（ファイル・文書名）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "月額保険料を算定しているのは COBOL の LF110B である。",
+        "改定後の月額保険料率(円/千円・月)は 20代 男1.10/女0.95、30代 男1.65/女1.40、40代 男3.20/女2.70、50代 男6.40/女5.20、60代 男13.20/女10.60。"
+      ],
+      "completeness": [
+        "料率の根拠文書は月額保険料率規程 LF-RULE-PREM（料率表 XLSX）であり、改定は稟議 LF-RINGI-PREM の決裁による。",
+        "加入年齢帯の区切り（20代/30代/…/60代）と円未満切捨ては在コードの構造的ルール。料率値そのものは規程を参照しないと特定できない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S29-1",
+    "scenario": "s29-ins-reserve",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらい生命の解約返戻金の計算で、解約控除（未償却の新契約費）の金額が契約初期で過小になり、解約返戻金が実際より過大に算定されています。新契約費の償却基準が正しくなるよう、該当ロジックを修正してください。",
+    "engine": [
+      "LF210B.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s29-ins-reserve/verify",
+    "golden": {
+      "expected_fix": [
+        "解約控除（未償却新契約費）= 新契約費 × max(0, 120 − 経過月数) / 120。新契約費は120ヶ月(10年)で直線償却する。",
+        "解約返戻金 = max(0, 責任準備金 − 解約控除)、円未満切捨て。",
+        "現行コードは償却月数を60ヶ月(5年)で計算しており誤り（経過月数<120の契約で解約控除・解約返戻金が誤る）。"
+      ],
+      "completeness": []
+    }
+  },
+  {
+    "task_id": "S29-2",
+    "scenario": "s29-ins-reserve",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "解約返戻金を算定しているプログラムを特定し、解約控除（未償却新契約費）をどのような償却基準 （償却月数）で計算しているかを、根拠（ファイル・該当箇所）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "解約返戻金を算定しているのは COBOL の LF210B である。",
+        "現行コードは解約控除（未償却新契約費）を『新契約費 × max(0, 60 − 経過月数)/60』、すなわち 60ヶ月(5年) で直線償却して算定している。"
+      ],
+      "completeness": [
+        "業務規程 解約返戻金計算 (LF29-RULE-001) では償却基準を 120ヶ月(10年) と定めており、現行コードの 60ヶ月 はこの規程から乖離している（償却が速いため契約初期で解約控除が過小となり、解約返戻金が過大に算定される）。",
+        "LF210B は LFCVPF を読み LFCVRF を出力。CO-SURR-CHARGE-AMT が解約控除、CO-CV-AMT が解約返戻金。"
+      ]
+    }
+  },
+  {
+    "task_id": "S3-C5",
+    "scenario": "s3-clearing",
+    "catalog_id": "C5",
+    "tier": 2,
+    "mechanic": "implement-from-design",
+    "grading": "behavioral",
+    "prompt": "日次の対外為替バッチで、相手行別の交換尻が承認済みの業務ルールどおりに算出・出力されるよう修正してください。片方向の集計だけで後続処理が走らないよう、入払双方の方向別ネットが揃った時点でのみ交換尻確定に進む制御も実装してください。",
+    "engine": [
+      "TG530B",
+      "TG935S"
+    ],
+    "verify_dir": "benchmark/scenarios/s3-clearing/verify",
+    "golden": {
+      "expected_fix": [
+        "TG935Sで相手行別ネットを、承認文書（TG-MIN-SIGN）どおり「受取（被仕向02）の合計 - 支払（仕向01）の合計」で算出し、正値が純受取（受取超）・負値が純支払（支払超）となる符号規約に合わせる（現行STARTは符号が逆）。",
+        "TG530Bは各相手行についてTG935Sを呼び出して符号付き交換尻を求め、その結果をTGCLRFのCL-NET-AMTへ設定する。",
+        "TG530BでTGNETCFのNC-OUT-FLAGとNC-IN-FLAGがいずれも'Y'の相手行だけ交換尻を確定（CL-SETTLE-STATUS='S'）し、どちらか一方でも未完了の相手行は保留（'H'）とするAND-join完了制御を実装する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S3-R10",
+    "scenario": "s3-clearing",
+    "catalog_id": "R10",
+    "tier": 1,
+    "mechanic": "source-invisible",
+    "grading": "answer-judged",
+    "prompt": "日次の対外交換尻で、相手先別のネット金額の符号が業務側の承認済みルールと逆に出ている疑いがあります。設計資料と既存COBOLを確認し、どの処理がどの計算式に直すべきか、根拠付きで回答してください。",
+    "golden": {
+      "correctness": [
+        "承認済みの符号規約は、交換尻のネット金額を「受取／被仕向（方向コード02）の合計 − 支払／仕向（方向コード01）の合計」で算出すること。",
+        "ネット受け方は正、ネット払い方は負として表現すること。",
+        "相手先別ネットは、両方向の小計がそろった後にTG935Sが計算する。",
+        "現行／変更前のSTART側計算は「支払／仕向 − 受取／被仕向」になっており、符号が逆である。"
+      ],
+      "completeness": [
+        "根拠資料としてTG-MIN-SIGNを挙げる。",
+        "AND-join後、方向別小計（01と02）の両方を使って相手先別に算出する点を説明する。",
+        "レイアウトやコード上に符号規約が明記されていないため、単純に現行式を正と読むのが誤りであることを説明する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S3-R8",
+    "scenario": "s3-clearing",
+    "catalog_id": "R8",
+    "tier": 1,
+    "mechanic": "locate",
+    "grading": "answer-judged",
+    "prompt": "日次の対外決済で、相手行ごとの交換尻を確定するバッチがどれか特定してください。承認済みの符号規約に従い、入方向・出方向の双方のネット計算が完了してから処理される箇所を、コードと業務資料の両方から確認して回答してください。",
+    "golden": {
+      "correctness": [
+        "対象プログラムは TG530B。",
+        "TG530B は交換尻計算バッチである。",
+        "TG530B は TGZENF と TGNETCF を読み込む。",
+        "TG530B は TGCLRF を出力する。"
+      ],
+      "completeness": [
+        "相手行別の日次交換尻を計算する処理であることを説明している。",
+        "入方向・出方向のネット計算完了後に実行される AND-join 条件に触れている。",
+        "承認済みの符号規約に従って交換尻を確定する点を、設計資料または業務資料とコードの対応で裏付けている。"
+      ]
+    }
+  },
+  {
+    "task_id": "S3-R9",
+    "scenario": "s3-clearing",
+    "catalog_id": "R9",
+    "tier": 1,
+    "mechanic": "precedence-ordering",
+    "grading": "answer-judged",
+    "prompt": "日次の銀行間クリアリングで、相手先別の交換尻を確定するタイミングが早すぎる疑いがあります。設計資料とCOBOLを確認し、どの処理がどの完了条件を満たしてから確定すべきか、現行実装との差分を特定してください。",
+    "golden": {
+      "correctness": [
+        "対象処理はTG530Bで、相手先ごとの交換尻確定ロジックである。",
+        "TG530Bは各相手先について、TGNETCF上のNC-OUT-FLAGが'Y'かつNC-IN-FLAGが'Y'の場合にのみSETTLE-STATUS／CL-SETTLE-STATUSを'S'として交換尻を確定してよい。",
+        "NC-OUT-FLAGまたはNC-IN-FLAGのどちらか一方でも'Y'でない場合、その相手先はSETTLE-STATUS／CL-SETTLE-STATUSを'H'として保留し、確定済み交換尻を出力してはならない。"
+      ],
+      "completeness": [
+        "根拠文書はTG-JOBNET-CLRのD-0904で、仕向ネットと被仕向ネットの両方完了後に交換尻確定へ進むAND-join条件を示している。",
+        "現行コードはSTARTでTGNETCFをOPENして読むが、NC-OUT-FLAG／NC-IN-FLAGを判定に使わず、TGZENFに存在する相手先を即時に'S'で確定している点が誤り。",
+        "交換尻は相手先単位で判定されるため、片方向だけ完了している相手先を全体完了とみなして確定する読み方は誤り。"
+      ]
+    }
+  },
+  {
+    "task_id": "S30-1",
+    "scenario": "s30-ins-policymaster",
+    "catalog_id": "1",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "月払契約の保険料が払込期月に入金されなかった場合、契約が失効するまでの猶予の扱い（払込猶予 期間の満了日の決め方と、失効日がいつになるか）はどうなっていますか。根拠（プログラム・該当箇所）と ともに説明してください。",
+    "golden": {
+      "correctness": [
+        "月払(CN-PAY-MODE-KBN='M')かつ未入金(CN-PAID-KBN='0')の契約は、払込猶予期間の満了日 = 払込期月(CN-DUE-YM)の「翌々月の末日」。",
+        "満了日までに未入金なら失効し、失効日(LAPSE-DT) = 満了日の翌日。契約状態区分(CN-CON-STATUS-KBN)は 01(有効)→05(失効)へ更新される。"
+      ],
+      "completeness": [
+        "この猶予/失効の規則は PL/I の lf_polmaster（契約マスタ保全・失効判定バッチ）にのみ実装されており、文書には記載がない（Family B / cross-language）。",
+        "うるう年を考慮した月末日判定で満了日を算出し、結果は LFLAPF（失効・復活管理）に出力される。"
+      ]
+    }
+  },
+  {
+    "task_id": "S30-2",
+    "scenario": "s30-ins-policymaster",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "ある月払契約の払込期月が2023年12月で、保険料が未入金のまま推移しました。この契約の失効日は いつになり、その後いつまで復活が可能ですか。猶予満了日となる月末日の算出（うるう年の扱いを含む）も あわせて、判定に用いられている期間の根拠（プログラム・該当箇所）とともに示してください。",
+    "golden": {
+      "correctness": [
+        "払込期月2023年12月の翌々月は2024年2月で、2024年はうるう年のため末日は2月29日。よって猶予満了日 = 2024年2月29日。未入金のため失効日(LAPSE-DT) = 満了日の翌日 = 2024年3月1日。",
+        "復活可能期間は失効日から36ヶ月（応当日判定）なので、復活可能期限(REINSTATE-DUE-DT) = 2027年3月1日。それまでは復活可能(REINST-STATUS-KBN='A')。"
+      ],
+      "completeness": [
+        "翌々月末日の算出にはうるう年補正が含まれ（lf_polmaster: 2024年2月＝29日）、これを2月28日と誤ると満了日・失効日が1日ずれる。猶予満了(翌々月末)→失効は lf_polmaster、復活36ヶ月の応当日は lf_reinstate に実装され、LFLAPF を介して連携する（2本のPL/Iにまたがって辿る必要がある）。",
+        "lf_reinstate には応当日が存在しない場合（末日など）に当月末日へ丸める補正があるが、本ケースの応当日（3月1日）は存在するため丸めは不要。これらの期間(翌々月末・36ヶ月)はコードにのみ存在し、規程・設計書・議事録には記載がない（code-only / Family B）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S31-1",
+    "scenario": "s31-ins-claims",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "みらい生命の保険金支払で、責任開始日から1年未満に支払事由が生じた契約の支払額が、承認済みの 改定後の支払削減割合と一致していません。承認済みの削減割合で支払額が算定されるよう、該当ロジックを 修正してください。",
+    "engine": [
+      "ClaimPayoutEngine.java"
+    ],
+    "verify_dir": "benchmark/scenarios/s31-ins-claims/verify",
+    "golden": {
+      "expected_fix": [
+        "責任開始日から起算して1年未満に支払事由が生じた場合の支払削減割合は改定後60%（1年以上は100%、削減なし）。",
+        "支払額 = max(0, 保険金額 × 支払割合（円未満切捨て） − 契約者貸付元利金)。",
+        "現行コードは旧削減割合75%で算定しており誤り（1年未満の支払事由で過大支払）。"
+      ],
+      "completeness": [
+        "算定は Java の ClaimPayoutEngine（jp.mirai.life.claims、メソッド reductionRatePct / payoutFor）が行う。",
+        "1年の判定は責任開始日(CL-RESP-START-DT)と支払事由発生日(CL-EVENT-DT)、対象は CL-CLAIM-STATUS-KBN='01' のみ。",
+        "改定後の削減割合60%は保険金支払規程/約款 LF-RULE-CLAIM（稟議 LF-RINGI-CLAIM で決裁）に定められ、コードのみからは復元できない（source-invisible / Family A）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S31-2",
+    "scenario": "s31-ins-claims",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "保険金の支払額を算定しているプログラムを特定し、責任開始日から1年未満に支払事由が生じた場合の 支払削減割合がいくらで、その根拠となる文書は何かを、根拠（ファイル・文書名）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "保険金支払額を算定しているのは Java の ClaimPayoutEngine である。",
+        "責任開始日から1年未満の支払削減割合は改定後60%（1年以上は100%）。"
+      ],
+      "completeness": [
+        "削減割合の根拠文書は保険金支払規程/約款 LF-RULE-CLAIM であり、改定は稟議 LF-RINGI-CLAIM の決裁による。",
+        "1年の境界・契約者貸付元利金の控除・円未満切捨ては在コードのルール。削減割合の値そのものは規程/約款を参照しないと特定できない。"
+      ]
+    }
+  },
+  {
+    "task_id": "S32-1",
+    "scenario": "s32-common-cif",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "顧客の名寄せ統合キーに付与している検査数字（チェックディジット）が、グループ標準の検査数字仕様と 一致せず、他システムとの突合で不一致が発生しています。検査数字の算定が正しくなるよう、該当ロジックを 修正してください。",
+    "engine": [
+      "CM110B.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s32-common-cif/verify",
+    "golden": {
+      "expected_fix": [
+        "名寄せ統合キーの検査数字はモジュラス11方式で算定する。CF-CIF-NO の先頭10桁の数字本体に対し、右端の桁からウェイト 2,3,4,5,6,7 を循環して掛け、積の総和を11で割った剰余 r を求め、検査数字 = 11 − r とする。",
+        "(11 − r) が 10 以上（剰余 r が 0 または 1）のときは検査数字を 0 とする。",
+        "現行コードはモジュラス10（Luhn 方式：右端から1桁おきに2倍し桁和を加算、検査数字 = (10 − 総和 mod 10) mod 10）で算定しており誤り（ほぼ全ての CIF番号で検査数字が異なる）。"
+      ],
+      "completeness": []
+    }
+  },
+  {
+    "task_id": "S32-2",
+    "scenario": "s32-common-cif",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "名寄せ統合キーの検査数字（チェックディジット）を算定しているプログラムを特定し、どのような方式で 検査数字を計算しているかを、根拠（ファイル・該当箇所）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "名寄せ統合キーの検査数字を算定しているのは COBOL の CM110B である。",
+        "現行コードはモジュラス10（Luhn 方式：右端から1桁おきに2倍し桁和を加算、検査数字 = (10 − 総和 mod 10) mod 10）で検査数字を算定している。"
+      ],
+      "completeness": [
+        "業務規程 顧客名寄せ統合キー (CM32-RULE-001) ではグループ標準としてモジュラス11・ウェイト2〜7循環（検査数字 = 11 − 剰余、(11 − 剰余) が 10 以上は 0）と定めており、現行コードの モジュラス10(Luhn) はこの標準から乖離している。",
+        "CM110B は CMCIFF を読み CMKEYF を出力。CK-CHECK-DIGIT-CNT が検査数字。"
+      ]
+    }
+  },
+  {
+    "task_id": "S32-3",
+    "scenario": "s32-common-cif",
+    "catalog_id": "3",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "名寄せ統合キーの検査数字（チェックディジット）について、検査数字を実際に算定（生成）している 権威プログラムはどれか、また 統合キー結果ファイルを参照する他のプログラム群は検査数字を自前で再計算 しているのか、それとも格納済みの値を読むだけなのかを区別したいです。検査数字ロジックの真正な所管 プログラムを特定し、参照側が再計算しているか否かを、根拠（ファイル・該当箇所）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "検査数字を算定（生成）している権威プログラムは CM110B ただ一つである。CMKEYF を OPEN OUTPUT して検査数字（CK-CHECK-DIGIT-CNT）を計算・書込みするのは CM110B のみ。",
+        "CMKEYF を参照する他のプログラム（CG230B, CG280B, CK210S, CK220B, CK230S, CK250B, CK260B, CK270B, CM180B, CM200B, CM220B, CM230B）はいずれも CMKEYF を READ（OPEN INPUT）し、格納済みの CK-CHECK-DIGIT-CNT を読むだけで、検査数字を再計算しない。",
+        "したがって検査数字ロジックの真正な所管（owner）は CM110B に一意。検査数字仕様を変える場合は CM110B のみを修正すればよく、消費側は再計算しないため変更は CMKEYF 経由で伝播する。"
+      ],
+      "completeness": [
+        "消費側に検査数字の再計算（加重和・モジュラス演算）は散在しない。CK-CHECK-DIGIT-CNT を MOVE/参照する箇所はあるが、いずれも値の読取り・数値／範囲チェック（例：CK210S の NUMERIC・範囲チェック）であって再計算ではない。",
+        "検査数字の標準方式は業務規程（CM32-RULE-001）に定められているが、その実装所管（生成）は CM110B に一意である（OPEN OUTPUT / WRITE が CM110B に限られ、消費側は再計算しない）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S33-1",
+    "scenario": "s33-common-calendar",
+    "catalog_id": "1",
+    "tier": 2,
+    "mechanic": "build",
+    "grading": "behavioral",
+    "prompt": "グループ資金集中の資金受渡日が、現行コードでは指図日の翌営業日で算定されていますが、規程で 定められた基準と異なっており、受渡日が誤っています。資金受渡日が規程どおりに算定されるよう、該当 ロジックを修正してください。",
+    "engine": [
+      "CC110B.cbl"
+    ],
+    "verify_dir": "benchmark/scenarios/s33-common-calendar/verify",
+    "golden": {
+      "expected_fix": [
+        "資金受渡日は指図日（FC-TRIGGER-DT）の翌々営業日（2営業日後）とする。営業日はグループ営業日カレンダー CCCALF の CL-HOLIDAY-FLAG='N' を営業日とし、休業日('Y')は計数からスキップする。",
+        "現行コードは翌営業日（1営業日後）で算定しており誤り（確定対象の全指図で受渡日が1営業日早い）。",
+        "翌々営業日（2営業日後）の基準は資金集中規程 CC33-RULE-001 / 稟議 CC33-RINGI-001 に定められており、コードには基準値の記載がない（Family A / doc-resident）。"
+      ],
+      "completeness": [
+        "算定は COBOL の CC110B（資金集中受渡日確定バッチ）が行い、入力は資金集中指図 CCFCTF と営業日カレンダー CCCALF、出力は CCVALF（VL-VALUE-DT が資金受渡日）。",
+        "確定対象は FC-FCT-STATUS-KBN='01' の指図のみ。"
+      ]
+    }
+  },
+  {
+    "task_id": "S33-2",
+    "scenario": "s33-common-calendar",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "資金集中の資金受渡日を算定しているプログラムを特定し、受渡日を指図日から何営業日後とする 基準で、その根拠がどの文書にあるかを、根拠（ファイル・該当箇所・文書）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "資金受渡日を算定しているのは COBOL の CC110B である。",
+        "受渡日は指図日の翌々営業日（2営業日後、休業日はスキップ）で、その基準はグループ資金集中規程 CC33-RULE-001（決裁は稟議 CC33-RINGI-001）に記載されている。"
+      ],
+      "completeness": [
+        "翌々営業日（2営業日後）という基準値は規程・稟議（文書）にのみ存在し、コードには基準値の記載がない（doc-resident / Family A）。",
+        "CC110B は CCCALF を読み込み、CCFCTF を読み、CCVALF を出力する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S34-1",
+    "scenario": "s34-common-idmap",
+    "catalog_id": "1",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "グループ各社の取引を相互参照するための「統合取引参照番号(group transaction reference)」は どのように採番されますか。各社のローカル取引番号からどう導出され、どのプログラムに実装されているかを、 根拠（プログラム・該当箇所）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "統合取引参照番号 = NAMESPACE(会社コード) × 10^12(1_000_000_000_000) + ローカル取引番号。採番は GroupRefService.toGroupRef(companyCode, localTxnNo) に実装されている。",
+        "会社別 NAMESPACE の割当は BK=11, SC=22, CD=33, PY=44, LF=55, CM=99（GroupRefService 内の固定マップ）。"
+      ],
+      "completeness": [
+        "これらの namespace 番号と 10^12 の桁構成はコードにのみ存在し、規程・設計書・議事録には記載がない（Family B / cross-service）。共通基盤に定義された事実を他社が相互参照に利用する。",
+        "ローカル取引番号は下位12桁を占める（各社のローカル取引番号は 10^12 未満）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S34-2",
+    "scenario": "s34-common-idmap",
+    "catalog_id": "2",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "ある統合監査ジャーナルの統合取引参照番号が 33000000123456 でした。これはどの会社の、どの ローカル取引番号に対応しますか。逆引きの判定に用いられている規則の根拠（プログラム・該当箇所）も 示してください。",
+    "golden": {
+      "correctness": [
+        "33000000123456 / 10^12 = 33 なので会社コードは CD（みらいカード）。剰余 33000000123456 mod 10^12 = 123456 がローカル取引番号。",
+        "逆引きは AuditLinkService の companyOf（namespace→会社の逆表 11→BK, 22→SC, 33→CD, 44→PY, 55→LF, 99→CM）と localNoOf（groupRef mod 10^12）に実装されている。"
+      ],
+      "completeness": [
+        "採番（GroupRefService）と逆引き（AuditLinkService）の2サービスにまたがるチェーンを辿る必要がある（逆表は採番側の割当を反映）。",
+        "namespace→会社 の逆表と 10^12 の桁構成はコードにのみ存在し、文書には記載がない（code-only / Family B）。"
+      ]
+    }
+  },
+  {
+    "task_id": "S34-3",
+    "scenario": "s34-common-idmap",
+    "catalog_id": "3",
+    "tier": 1,
+    "mechanic": "retrieve",
+    "grading": "answer-judged",
+    "prompt": "統合監査ジャーナルの突合作業中、自社（みらいカード）の元帳には存在しない2件の統合取引参照番号 44000000007890 と 22000000007890 を発見しました。それぞれどの会社の、どのローカル取引番号に対応 しますか。また、自社（カード）のコードや規程だけではこの2件を解決できない理由（採番・逆引きの規則が どこに実装され、何が文書に記載されていないのか）を、根拠（プログラム・該当箇所）とともに説明してください。",
+    "golden": {
+      "correctness": [
+        "44000000007890 ÷ 10^12 = 44 なので会社は PY（みらいペイ）。剰余 44000000007890 mod 10^12 = 7890 がローカル取引番号。",
+        "22000000007890 ÷ 10^12 = 22 なので会社は SC（みらい証券）。剰余 = 7890。下位12桁（7890）が同じでも、上位の namespace（44 と 22）で会社が一意に分かれる。",
+        "解決には共通基盤 Java を参照する必要がある。逆引きは AuditLinkService（companyOf = groupRef ÷ 10^12 を INV_NAMESPACE で会社へ、localNoOf = groupRef mod 10^12）、採番は GroupRefService（toGroupRef = namespace × 10^12 + ローカル番号）に実装されている。"
+      ],
+      "completeness": [
+        "会社別 namespace（BK=11, SC=22, CD=33, PY=44, LF=55, CM=99）と 10^12 の桁構成はコードにのみ存在し、規程・設計書・議事録には記載がない（Family B / code-only）。自社（みらいカード）の元帳・コード・規程だけでは他社の番号は解決できず、共通基盤のサービスを読む必要がある（cross-company）。",
+        "採番（GroupRefService）と逆引き（AuditLinkService）の2サービスにまたがって辿る必要があり、逆表は採番側の割当を反映している。"
+      ]
+    }
+  },
+  {
+    "task_id": "S4-C7",
+    "scenario": "s4-credit",
+    "catalog_id": "C7",
+    "tier": 2,
+    "mechanic": "reconcile-drift",
+    "grading": "behavioral",
+    "prompt": "KYC承認済み顧客だけを対象に、残高履歴から与信限度見直し用のエクスポージャを算出する処理が、商品別上限の業務文書と一致しているか確認し、ずれている場合は修正してください。複数商品を保有する顧客では、商品ごとに与信残高を該当する商品別上限に照らして判定されるようにしてください。",
+    "engine": [
+      "KZ150B",
+      "KZ160B"
+    ],
+    "verify_dir": "benchmark/scenarios/s4-credit/verify",
+    "golden": {
+      "expected_fix": [
+        "KZ150B (KYC gate / credit-limit review) and KZ160B (per-product exposure aggregation) are the programs to change.",
+        "KZ150B must gate the credit-limit review on approved KYC status only (unapproved/hold/expired customers are not eligible for an increase).",
+        "KZ160B must evaluate exposure per customer per product, then compare each product's exposure against its documented per-product cap, setting CAPPED-AMT = MIN(exposure, cap) and OVER-FLAG = 'Y' when the product's exposure exceeds its cap.",
+        "The exact per-product cap values must be taken from the authoritative business documents, not hard-coded from an obsolete or locally inferred rule."
+      ]
+    }
+  },
+  {
+    "task_id": "S4-R11",
+    "scenario": "s4-credit",
+    "catalog_id": "R11",
+    "tier": 1,
+    "mechanic": "locate",
+    "grading": "answer-judged",
+    "prompt": "KYC承認済み顧客について、残高履歴を見て与信限度を見直し、商品別の上限に照らして与信エクスポージャを集計しているバッチを特定してください。該当プログラムIDと、参照・更新している主要ファイルも確認してください。",
+    "golden": {
+      "correctness": [
+        "KYC承認済み顧客を対象とした与信限度見直しを行うバッチは KZ150B。",
+        "商品別の与信エクスポージャ集計と商品別上限の照合は KZ160B が行う。",
+        "KZ150B の入力は KZACCTF と KZCUSTF。",
+        "KZ150B の出力は KZCRLF（KZ160B はエクスポージャ関連ファイル KZEXPF/KZEXPRF を参照する）。"
+      ],
+      "completeness": [
+        "KYC承認済みであることを処理対象の前提としている点を説明している。",
+        "残高履歴に基づく与信限度見直しと、商品別キャップに対する与信エクスポージャ集計が同じ対象処理に結び付くことを示している。",
+        "根拠として関連するCOBOLプログラム、copybook、または業務設計資料を挙げている。"
+      ]
+    }
+  },
+  {
+    "task_id": "S4-R12",
+    "scenario": "s4-credit",
+    "catalog_id": "R12",
+    "tier": 1,
+    "mechanic": "doc-code-drift",
+    "grading": "answer-judged",
+    "prompt": "残高履歴からの与信限度見直し処理について、KYC承認ゲートの設計資料と現行COBOL実装にズレがないか確認してください。特に、商品別上限に照らした与信エクスポージャ集計の前段で、限度引上げ可否がどの条件で決まるべきか、現行コードがその通りになっているかを報告してください。",
+    "golden": {
+      "correctness": [
+        "D-1002 requires a limit raise to be applied only when the customer KYC status field `CU-KYC-STATUS` is `'1'`（確認済）.",
+        "For `CU-KYC-STATUS` values `'0'`（未確認） or `'9'`（確認保留）, the account must be held: `NEW-LIMIT` remains the current limit and `RAISE-FLAG = 'N'`, even if the D-1003 balance threshold is satisfied.",
+        "The shipped COBOL behavior is drifted/buggy: it reads `KZCUSTF` and writes the KYC value to log field `CR-KYC-STATUS`, but does not use KYC status as a gate, so any account meeting the D-1003 balance threshold is raised with `RAISE-FLAG = 'Y'`."
+      ],
+      "completeness": [
+        "Identifies `KZ-MIN-KYC` and `KZ-GUIDE-CR` as the authoritative documents for the KYC gate and credit-limit review rule.",
+        "Explains that D-1003 balance-threshold eligibility is necessary but not sufficient; the approved KYC gate must be checked before applying a raise.",
+        "Notes the relevant data flow: customer KYC is sourced from `KZCUSTF` / `CU-KYC-STATUS` and copied to the credit review log as `CR-KYC-STATUS`, but current implementation only logs it."
+      ]
+    }
+  },
+  {
+    "task_id": "S4-R13",
+    "scenario": "s4-credit",
+    "catalog_id": "R13",
+    "tier": 1,
+    "mechanic": "cross-modal-link",
+    "grading": "answer-judged",
+    "prompt": "KYC承認済みの顧客だけを対象に、残高履歴から与信限度を見直し、商品別の上限資料に照らして総与信エクスポージャを集計する処理を確認したいです。この判定で使われるKYCゲートの入力項目を、コードと業務資料の対応から特定してください。",
+    "golden": {
+      "correctness": [
+        "KYCゲートで参照される入力項目は `KZCUSTF.KYC-STATUS`。",
+        "対象は顧客マスタ/顧客属性系データセット `KZCUSTF` のフィールド `KYC-STATUS`。"
+      ],
+      "completeness": [
+        "残高履歴からの限度見直し処理と商品別キャップ資料を突き合わせる前段で、この項目により承認済み顧客のみを通すことを説明している。",
+        "商品別エクスポージャ集計そのものの金額項目や商品コードではなく、KYC承認ゲートの判定項目である点を明確にしている。",
+        "コード上のフィールド名を挙げるだけでなく、KYC ステータス値の意味（例: 1=確認済 / 0=未確認 / 9=確認保留）とその権威定義（KZ-DBD-CUST 等の設計文書）に基づいて、承認済みKYCの判定条件を説明していること。"
+      ]
+    }
+  },
+  {
+    "task_id": "S5-C9",
+    "scenario": "s5-segmentation",
+    "catalog_id": "C9",
+    "tier": 2,
+    "mechanic": "implement-from-design",
+    "grading": "behavioral",
+    "prompt": "顧客月次バッチの顧客セグメント付与で、平均残高から5段階セグメントを判定する仕様が最新の承認済み設計と合っていません。月次一括更新バッチ（判定サブを含む）について、設計資料に記載された閾値と同額時の扱いに従うよう実装を修正してください。",
+    "engine": [
+      "JH315S",
+      "JH310B"
+    ],
+    "verify_dir": "benchmark/scenarios/s5-segmentation/verify",
+    "golden": {
+      "expected_fix": [
+        "JH315S is the COBOL program to change (JH310B is the driver that calls it and needs no change).",
+        "The customer segment is derived from average balance using five approved bands: SG05 for >= 50,000,000; SG04 for >= 20,000,000 and < 50,000,000; SG03 for >= 5,000,000 and < 20,000,000; SG02 for >= 1,000,000 and < 5,000,000; SG01 for < 1,000,000.",
+        "A balance exactly equal to a threshold is assigned to the higher band (the >= comparison is inclusive upward), e.g. exactly 5,000,000 maps to SG03 and exactly 50,000,000 maps to SG05."
+      ]
+    }
+  },
+  {
+    "task_id": "S5-P4",
+    "scenario": "s5-segmentation",
+    "catalog_id": "P4",
+    "tier": 1,
+    "mechanic": "code-partial->doc-completes",
+    "grading": "answer-judged",
+    "prompt": "顧客セグメント付与の現行COBOL実装が、承認済みの平均残高ベースの区分仕様と一致しているか確認してください。不一致があれば、該当する処理箇所と、実装すべき正式な区分条件を資料根拠つきで回答してください。",
+    "golden": {
+      "correctness": [
+        "該当プログラムはJH315Sで、AVG-BALを使って顧客をSG01〜SG05の5段階に分類する処理である。",
+        "正式な区分はSG01 一般層: 0 <= AVG-BAL < 1,000,000、SG02 準優良層: 1,000,000 <= AVG-BAL < 5,000,000、SG03 優良層: 5,000,000 <= AVG-BAL < 20,000,000、SG04 上位層: 20,000,000 <= AVG-BAL < 50,000,000、SG05 プレミアム層: AVG-BAL >= 50,000,000である。",
+        "境界値ちょうどの場合は上位側のセグメントに入る equal-value tie-break rule を適用する。",
+        "現行実装はAVG-BAL >= 5,000,000ならSG03、それ以外はSG01にする2区分のみで、SG02/SG04/SG05および複数の承認済み閾値が未実装である。"
+      ],
+      "completeness": [
+        "正式仕様の根拠資料としてJH-DECK-SEGおよびJH-TBL-SEGを挙げる。",
+        "単にコード上の2分岐を仕様とみなすのは誤りで、コード断片を文書の承認済みセグメント表で補完して判断する必要がある。"
+      ]
+    }
+  },
+  {
+    "task_id": "S5-R14",
+    "scenario": "s5-segmentation",
+    "catalog_id": "R14",
+    "tier": 1,
+    "mechanic": "multi-doc-structural",
+    "grading": "answer-judged",
+    "prompt": "顧客セグメント付与で、平均残高から5段階の区分を決める仕様と現行実装の差分を確認してください。承認済み資料上のしきい値、境界値の扱い、実際にその判定をしているCOBOL箇所を特定して報告してください。",
+    "golden": {
+      "correctness": [
+        "D-1102/JH-DECK-SEGおよびJH-TBL-SEGでは、AVG-BALで5セグメントに分類する: SG01 一般層 = 0 <= bal < 1,000,000; SG02 準優良層 = 1,000,000 <= bal < 5,000,000; SG03 優良層 = 5,000,000 <= bal < 20,000,000; SG04 上位層 = 20,000,000 <= bal < 50,000,000; SG05 プレミアム層 = bal >= 50,000,000。",
+        "境界値は等号を上位側の区分に含める equal-value tie-break rule で扱う。例: 1,000,000 は SG02、5,000,000 は SG03、20,000,000 は SG04、50,000,000 は SG05。",
+        "実装箇所は JH315S で、顧客の AVG-BAL に基づいてセグメントを設定する処理である。",
+        "現行コードは AVG-BAL >= 5,000,000 なら SG03、それ以外は SG01 の2区分しか実装しておらず、SG02/SG04/SG05 および複数境界が欠落している。"
+      ],
+      "completeness": [
+        "権威資料として JH-DECK-SEG と JH-TBL-SEG を挙げ、コードだけの2区分判定を仕様と誤認してはいけない理由を説明する。",
+        "入力項目は平均残高 AVG-BAL、出力は顧客セグメント SG01〜SG05 であることを明記する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S5-R15",
+    "scenario": "s5-segmentation",
+    "catalog_id": "R15",
+    "tier": 1,
+    "mechanic": "doc-structural",
+    "grading": "answer-judged",
+    "prompt": "顧客セグメント判定の平均残高境界値について、現行COBOLと業務資料を確認し、境界ちょうどの値をどちらのセグメントへ寄せるべきか回答してください。あわせて、根拠となる資料と、現行実装で注意すべき点も示してください。",
+    "golden": {
+      "correctness": [
+        "D-1103 の承認済みルールでは、AVG-BAL がセグメント境界値と完全一致する場合は上位セグメントへ割り当てる。",
+        "境界値は下限側が inclusive と解釈されるため、AVG-BAL = 5,000,000 は SG03、AVG-BAL = 50,000,000 は SG05 になる。",
+        "根拠資料は JH-DECK-SEG である。"
+      ],
+      "completeness": [
+        "5-band segment assignment is based on average balance thresholds, not a single binary cutoff.",
+        "現行 shipped code の START 側にある単一の `>= 5,000,000` 比較だけでは、未実装の複数バンド境界に対する tie-break rule が定義されていない点を指摘する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S6-C10",
+    "scenario": "s6-calendar",
+    "catalog_id": "C10",
+    "tier": 2,
+    "mechanic": "implement-tribal",
+    "grading": "behavioral",
+    "prompt": "月次サイクル末の基準日算出で、名目上の月末日が銀行休業日に当たるケースの扱いが現行仕様とずれているため修正してください。既存の設計資料と休日カレンダー連携の扱いを確認し、同じ基準日を使うバッチ間で結果が揃うようにしてください。",
+    "engine": [
+      "KZ900S",
+      "KZ905B"
+    ],
+    "verify_dir": "benchmark/scenarios/s6-calendar/verify",
+    "golden": {
+      "expected_fix": [
+        "KZ900S is the program to change; KZ905B already calls KZ900S and needs no change.",
+        "When the nominal month-end date is a bank holiday, the cycle-end basis date must roll back to the immediately preceding bank business day, not remain on the calendar month-end and not roll forward.",
+        "The holiday decision must use the bank holiday/business-day calendar already used by the estate, so consecutive holidays/weekends are skipped until the prior business day is found."
+      ]
+    }
+  },
+  {
+    "task_id": "S6-R16",
+    "scenario": "s6-calendar",
+    "catalog_id": "R16",
+    "tier": 1,
+    "mechanic": "tribal",
+    "grading": "answer-judged",
+    "prompt": "月次サイクル締めの基準日決定で、名目月末が銀行休業日に当たるケースの扱いを確認してください。現行コードの挙動が標準ルールと合っているか、根拠資料と該当処理を特定して回答してください。",
+    "golden": {
+      "correctness": [
+        "標準ルールは D-1202 で、サイクル締めの名目月末が銀行休業日の場合、基準日は翌営業日ではなく前営業日へ繰り上げる。",
+        "この方向は交換尻の決済日合わせのために標準化されたものである。",
+        "該当処理は KZ900S で、休業日ロール時は前営業日を返し、ROLLED-FLAG に 'Y' を設定する。",
+        "現行の pre-change/buggy START 側の挙動は翌営業日へ繰り下げており、ROLLED-FLAG は 'Y' になるがロール方向が誤りである。"
+      ],
+      "completeness": [
+        "根拠資料として KZ-HEAR-CAL を挙げる。",
+        "名目月末が営業日ならロール不要で、休業日のときだけロール済み扱いになることを区別する。",
+        "一見すると翌営業日ロールに見える既存コードは標準化前の挙動であり、資料側の D-1202 が優先されることを説明する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S6-R17",
+    "scenario": "s6-calendar",
+    "catalog_id": "R17",
+    "tier": 1,
+    "mechanic": "locate-authority",
+    "grading": "answer-judged",
+    "prompt": "サイクルエンド処理で基準日を月末に置く際、名目月末が銀行休業日だった場合にどの既存共通処理を呼ぶべきか確認してください。該当するプログラムIDと、その処理が参照するカレンダー資源を回答してください。",
+    "golden": {
+      "correctness": [
+        "該当プログラムIDは KZ900S。",
+        "KZ900S は日付計算共通サブルーチンである。",
+        "KZ900S は KZCALF を読み込む。",
+        "KZ900S は更新・出力対象を持たない。"
+      ],
+      "completeness": [
+        "月末が銀行休業日の場合の営業日ロール判定は、個別バッチではなく共通の日付計算処理に集約されていることを説明している。",
+        "KZCALF が銀行休業日・営業日判定の権威データとして使われることを含めている。"
+      ]
+    }
+  },
+  {
+    "task_id": "S7-C11",
+    "scenario": "s7-warehouse",
+    "catalog_id": "C11",
+    "tier": 2,
+    "mechanic": "implement-from-design",
+    "grading": "behavioral",
+    "prompt": "手数料確定後に実行する分析WH向けの手数料履歴抽出 JH410B で、未確定扱いの明細が混入している疑いがあります。設計資料に沿って、確定済み手数料の行だけを分析用DWHへ抽出し、未確定の行は抽出対象から除外するよう JH410B の抽出条件を修正してください。",
+    "engine": [
+      "JH410B"
+    ],
+    "verify_dir": "benchmark/scenarios/s7-warehouse/verify",
+    "golden": {
+      "expected_fix": [
+        "JH410B is the program that must be changed.",
+        "JH410B must read each KZFEEHF fee row and write it to the JHDWHF analytics extract only when the confirmation flag FH-CONFIRM-FLAG = 'Y' (確定済).",
+        "Rows with FH-CONFIRM-FLAG = 'N' (未確定/暫定) must be skipped and never written to JHDWHF, because only confirmed fee history may reach the analytics warehouse (the confirm-before-extract rule per JH-MIN-CONF / JH-JOBNET-DWH / JH-DBD-FEE)."
+      ]
+    }
+  },
+  {
+    "task_id": "S7-R18",
+    "scenario": "s7-warehouse",
+    "catalog_id": "R18",
+    "tier": 1,
+    "mechanic": "cross-modal-link",
+    "grading": "answer-judged",
+    "prompt": "DWH向けの手数料履歴抽出で、未確定の手数料が分析基盤に流れた疑いがあります。関連する設計資料とCOBOLを突き合わせて、抽出対象に含めてよい手数料履歴の条件と、現行処理のどこを直すべきかを特定してください。",
+    "golden": {
+      "correctness": [
+        "DWH手数料履歴抽出を担当するプログラムはJH410Bである。",
+        "JH410BはKZFEEHFからJHDWHFへ出力する際、FH-CONFIRM-FLAG = 'Y'（確定済）の行だけを書き込むべきである。",
+        "FH-CONFIRM-FLAG = 'N' の未確定・暫定手数料行はDWH出力対象外であり、JHDWHFへ書き込んではならない。",
+        "現行の不具合は、START側の抽出がFH-CONFIRM-FLAGを参照せずKZFEEHF全行をJHDWHFへ出しているため、確認前または独立実行時に未確定手数料が漏れることである。"
+      ],
+      "completeness": [
+        "根拠資料としてJH-MIN-CONF、JH-JOBNET-DWH、JH-DBD-FEEを結び付け、DWH抽出は手数料確定ステップ後に実行される前提であることを示す。",
+        "入力はKZFEEHF、出力はJHDWHFで、判定フィールドはKZFEEHF上のFH-CONFIRM-FLAGであることを明記する。",
+        "単に手数料履歴を全件抽出するという読み方は誤りで、分析基盤には確定済みの履歴だけを渡すという業務制約が優先されることを説明する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S7-R19",
+    "scenario": "s7-warehouse",
+    "catalog_id": "R19",
+    "tier": 1,
+    "mechanic": "cross-modal-link",
+    "grading": "answer-judged",
+    "prompt": "手数料履歴を分析DWHへ取り込む抽出条件を確認したいです。手数料確定後に走る想定ですが、未確定分を落とすためにどのデータ項目を判定キーにすべきか、コードと業務資料を突き合わせて特定してください。",
+    "golden": {
+      "correctness": [
+        "Confirmed-fee filtering is controlled by dataset/table KZFEEHF field CONFIRM-FLAG.",
+        "The answer must identify the exact field as KZFEEHF.CONFIRM-FLAG.",
+        "The field is the criterion used to include only fees that have been confirmed for the fee-history warehouse extract."
+      ],
+      "completeness": [
+        "Mentions the business document/source indicating the extract runs after fee confirmation or that only confirmed fee history is in scope.",
+        "Cites the COBOL/copybook location where KZFEEHF and CONFIRM-FLAG are defined or referenced.",
+        "Explains that using generic status/date fields alone would be insufficient; the confirmation flag is the authoritative inclusion gate."
+      ]
+    }
+  },
+  {
+    "task_id": "S8-C12",
+    "scenario": "s8-interest",
+    "catalog_id": "C12",
+    "tier": 2,
+    "mechanic": "multi-rule-engine",
+    "grading": "behavioral",
+    "prompt": "日次残高ベースの利息計上で、サイクル基準日までの経過日数が一部の月末・休日跨ぎでずれているため、設計資料に記載された基準日調整と日数計算に合わせて修正してください。既存の勘定系バッチの該当箇所を特定し、コンパイルと既存I/O形式を壊さずに実装してください。",
+    "engine": [
+      "KZ410B"
+    ],
+    "verify_dir": "benchmark/scenarios/s8-interest/verify",
+    "golden": {
+      "expected_fix": [
+        "Change program KZ410B.",
+        "Interest accrual must run through the cycle basis date after applying the bank holiday roll rule, not the unadjusted calendar cycle date.",
+        "Use actual/365 day-count for daily-balance interest: interest = daily balance × annual rate × actual accrued days / 365.",
+        "The accrued-day interval must include days up to the holiday-rolled basis date according to the estate’s documented cycle basis-date convention."
+      ]
+    }
+  },
+  {
+    "task_id": "S8-R20",
+    "scenario": "s8-interest",
+    "catalog_id": "R20",
+    "tier": 1,
+    "mechanic": "source-invisible",
+    "grading": "answer-judged",
+    "prompt": "サイクル基準日までの日割利息計上で、現行ロジックが業務規定と合っているか確認してください。該当する処理と根拠資料を特定し、必要な日数計算・利息計算の正しい仕様を回答してください。",
+    "golden": {
+      "correctness": [
+        "Authoritative rule is D-1403 from KZ-MIN-DAYCOUNT: interest accrual must use ACTUAL/365, not 30/360.",
+        "Accrual day count is the actual number of elapsed calendar days (実経過日数/暦日数) between PERIOD-START-DT and the holiday-rolled accrual basis date.",
+        "Accrued interest is AVG-DAILY-BAL × INT-RATE × actual elapsed days ÷ 365, truncated to whole yen."
+      ],
+      "completeness": [
+        "Identifies that the shipped/start behavior incorrectly uses a 30/360-style count: (Y2-Y1)*360 + (M2-M1)*30 + (D2-D1), then divides by 360.",
+        "Mentions that the basis date used for the ending date is the holiday-rolled cycle basis date, not the unadjusted cycle date.",
+        "Explains that the defect can overstate or understate interest whenever actual elapsed calendar days differ from the synthetic 30-day-month count and because the denominator must be 365."
+      ]
+    }
+  },
+  {
+    "task_id": "S8-R21",
+    "scenario": "s8-interest",
+    "catalog_id": "R21",
+    "tier": 1,
+    "mechanic": "locate",
+    "grading": "answer-judged",
+    "prompt": "日次残高ベースの利息をサイクル基準日まで実際日数/365で按分し、基準日が休日の場合はロール後の日付で処理するバッチについて、どのCOBOLプログラムが利息計上を行い、どの出力ファイルに計上結果を書き込むかを特定してください。関連する入力ファイルもあわせて確認してください。",
+    "golden": {
+      "correctness": [
+        "利息計上を行うプログラムは KZ410B。",
+        "KZ410B は accrued interest の計上結果を KZINTF に書き込む。",
+        "KZ410B は 利息計算バッチ である。"
+      ],
+      "completeness": [
+        "KZ410B は KZDBALF と KZCYRF を入力として読む。",
+        "処理条件は日次残高利息をサイクル基準日まで actual/365 で計算し、休日ロール後の基準日を使う文脈に対応している。"
+      ]
+    }
+  },
+  {
+    "task_id": "S8-R22",
+    "scenario": "s8-interest",
+    "catalog_id": "R22",
+    "tier": 1,
+    "mechanic": "cross-modal-link",
+    "grading": "answer-judged",
+    "prompt": "日次残高利息のサイクル締め処理で、月末が銀行休業日に当たるケースの利息計算日数が想定より長くなるという照会が来ています。設計資料とCOBOL実装を突き合わせて、どの日付を利息計算の終端日に使うべきか、現行実装のどこが仕様とずれているかを特定してください。",
+    "golden": {
+      "correctness": [
+        "D-1402 requires interest to be accrued up to the cycle basis date after holiday resolution, not the nominal month-end date.",
+        "The correct accrual end date is KZCYRF.CR-RESOLVED-DT, assigned/used as ACCRUAL-DT for the day count.",
+        "KZ410B is the relevant program and should use CR-RESOLVED-DT rather than CR-NOMINAL-DT for the accrual end date.",
+        "The shipped/pre-change START behavior incorrectly accrues through KZCYRF.CR-NOMINAL-DT, ignoring CR-RESOLVED-DT, which overstates the day count when the cycle boundary rolls over a bank holiday."
+      ],
+      "completeness": [
+        "A thorough answer cites KZ-MIN-BASIS and KZ-DBD-CYR as the authoritative sources tying the holiday-rolled cycle basis date to daily-balance interest accrual.",
+        "It should mention the actual/365 convention and that only the accrual end date changes; the day-count convention itself remains actual/365.",
+        "It should explain why a naive month-end reading is wrong: CR-NOMINAL-DT is the unrolled cycle boundary, while CR-RESOLVED-DT is the standardized holiday-resolved basis date used for cycle processing."
+      ]
+    }
+  },
+  {
+    "task_id": "S9-C14",
+    "scenario": "s9-delinquency",
+    "catalog_id": "C14",
+    "tier": 2,
+    "mechanic": "multi-rule-engine",
+    "grading": "behavioral",
+    "prompt": "延滞口座の月次評価で、猶予期間内の口座にも延滞手数料が乗っており、また所定の延滞日数（エイジング区分）に達しても回収ステータスへ遷移しません。設計資料と業務文書で定義されている猶予期間とエイジング区分に合わせて、該当バッチの延滞手数料計算とステータス更新（回収ステータスへの遷移を含む）を修正してください。",
+    "engine": [
+      "KZ510B"
+    ],
+    "verify_dir": "benchmark/scenarios/s9-delinquency/verify",
+    "golden": {
+      "expected_fix": [
+        "KZ510B is the program that must be changed.",
+        "Late charge must be assessed only for days strictly beyond the documented grace period; accounts at or within the grace period receive no late charge.",
+        "The chargeable-day calculation must subtract the grace period from days past due before applying the late-charge formula.",
+        "Account status must escalate to collection only when the documented collection aging bucket is reached, not merely when the account first becomes overdue."
+      ]
+    }
+  },
+  {
+    "task_id": "S9-R23",
+    "scenario": "s9-delinquency",
+    "catalog_id": "R23",
+    "tier": 1,
+    "mechanic": "tribal",
+    "grading": "answer-judged",
+    "prompt": "延滞口座の遅延損害金が想定より高く出ているという照会が来ています。既存の延滞判定・回収ステータス更新処理と関連資料を確認し、遅延損害金の起算日／据置扱いと、延滞ステータスの aging 判定に同じ据置を使うべきかを特定してください。",
+    "golden": {
+      "correctness": [
+        "遅延損害金は支払期日後の据置期間10日を超えた日数に対してのみ課される。",
+        "課金対象日数は MAX(0, days-overdue - 10) であり、10日以内の延滞には遅延損害金を課さない。",
+        "遅延損害金の計算は OVERDUE-AMT × 0.146 × 課金対象日数 ÷ 365 を円未満切捨てで算出する。",
+        "延滞・回収ステータスの aging bucket 判定は据置後日数ではなく、生の days-overdue に基づいて行う。"
+      ],
+      "completeness": [
+        "現行の shipped/pre-change START 側の実装は据置0日として full days-overdue に課金しており、10日据置ルールに対して過大請求になることを説明する。",
+        "根拠資料として KZ-HEAR-DLQ の D-1503 を挙げる。",
+        "据置期間は遅延損害金の課金だけに適用され、延滞ステータス判定には適用されない点を明示する。"
+      ]
+    }
+  },
+  {
+    "task_id": "S9-R24",
+    "scenario": "s9-delinquency",
+    "catalog_id": "R24",
+    "tier": 1,
+    "mechanic": "doc-text",
+    "grading": "answer-judged",
+    "prompt": "延滞口座の事後判定で、現行COBOLがどの延滞日数帯までステータス遷移を実装しているか確認し、標準仕様上はいつ回収扱いへ上げるべきかを根拠資料付きで答えてください。猶予期間後の遅延損害金判定と混同せず、ステータス更新ロジックに絞ってください。",
+    "golden": {
+      "correctness": [
+        "D-1502の事後ステータス NEW-STATUS は延滞日数の aging bucket から決まる。days-overdue <= 0 は '00'（正常）、1〜60日は '10'（延滞）、61日以上は '30'（回収）。",
+        "回収ステータス '30' への遷移は、aging bucket が B3 に到達する時点、つまり延滞日数61日以上で発生する。B1は1〜30日、B2は31〜60日、B3は61〜90日、B4は91日以上。",
+        "現行のSTART実装は pre-standardization の挙動で、days-overdue <= 0 を '00'、正のdays-overdueをすべて '10' にするだけで、'30'（回収）へのエスカレーションを実装していない。"
+      ],
+      "completeness": [
+        "根拠資料として KZ-TBL-AGE、KZ-SPEC-DLQ、KZ-MIN-DLQ を挙げ、aging bucket と NEW-STATUS の対応を照合している。",
+        "遅延損害金の猶予期間判定とは別に、ステータス更新は days-overdue の aging bucket に基づくことを明確にしている。",
+        "単純に現行コードだけを見ると正の延滞日数はすべて '10' と読めるが、それは標準仕様ではなく、回収遷移が未実装である点を説明している。"
+      ]
+    }
+  },
+  {
+    "task_id": "S9-R25",
+    "scenario": "s9-delinquency",
+    "catalog_id": "R25",
+    "tier": 1,
+    "mechanic": "locate",
+    "grading": "answer-judged",
+    "prompt": "延滞口座の判定・遅延損害金算定・延滞ステータス更新を担うバッチを特定してください。遅延損害金の猶予期間の扱いと回収ステータスへの遷移について、現行コードがどう実装しているか（または未実装か）を、入力・更新している延滞関連ファイルとともに示してください。",
+    "golden": {
+      "correctness": [
+        "該当プログラムは KZ510B。",
+        "KZ510B は延滞判定・遅延損害金バッチである。",
+        "現行の KZ510B は延滞日数に応じて口座ステータスを 00(正常)／10(延滞) に設定するのみで、回収('30')への遷移は実装していない。",
+        "KZ510B は KZDLRF に結果を書き込む。"
+      ],
+      "completeness": [
+        "入力ファイルとして KZDLQF を読むことを含めている。",
+        "現行コードは猶予期間なしで全延滞日数に遅延損害金を賦課しており、aging bucket に応じた回収エスカレーションも未実装である点（承認済みルールとの差分）を説明している。",
+        "設計書やファイル定義だけでなく、実際の COBOL の I/O とステータス更新ロジックを根拠にしている。"
+      ]
+    }
+  }
+]

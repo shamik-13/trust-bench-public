@@ -1,0 +1,251 @@
+      /* ================================================================ */
+      /* PROGRAM ID: PMCMNCHG                                            */
+      /* 契約変更処理バッチ                                              */
+      /* ================================================================ */
+      /* 変更履歴                                                        */
+      /* 版数   年月日    担当        概要                                */
+      /* ----  --------  --------    --------------------------------   */
+      /* 1.0   2024/11/15  松本      初版作成                            */
+      /* 1.1   2025/02/20  田中      払込方法変更時バリデーション強化    */
+      /* 1.2   2025/06/10  鈴木      失効契約の変更禁止ロジック追加      */
+      /* ================================================================ */
+
+      PMCMNCHG: PROC OPTIONS(MAIN);
+
+      %INCLUDE LFCONFC;
+      %INCLUDE LFCMNHC;
+
+      DCL 1 WK-INPUT-REC,
+            2 WK-CON-ID         CHAR(10),
+            2 WK-CHG-TYPE-KBN   CHAR(2),
+            2 WK-NEW-VAL-CHR    CHAR(30),
+            2 WK-NEW-VAL-NUM    FIXED DEC(9,2),
+            2 WK-FILLER         CHAR(10);
+
+      DCL 1 WK-CHANGE-MATRIX,
+            2 WK-CHANGE-01 CHAR(6) INIT('001031'),  /* 有効 */
+            2 WK-CHANGE-03 CHAR(6) INIT('010100'),  /* 払込猶予中 */
+            2 WK-CHANGE-05 CHAR(6) INIT('000000'),  /* 失効 */
+            2 WK-CHANGE-07 CHAR(6) INIT('001031');  /* 復活 */
+
+      DCL 1 WK-WORK-AREA,
+            2 WK-STATUS         FIXED BIN(31),
+            2 WK-CHG-IDX        FIXED BIN(31),
+            2 WK-ALLOWED        CHAR(1),
+            2 WK-PREV-PAY-MODE  CHAR(1),
+            2 WK-PREV-AMOUNT    FIXED DEC(11,2),
+            2 WK-PREV-TERM      FIXED DEC(3,0),
+            2 WK-CHG-COUNT      FIXED DEC(7,0) INIT(0),
+            2 WK-ERR-COUNT      FIXED DEC(7,0) INIT(0),
+            2 WK-REC-CNT        FIXED DEC(7,0) INIT(0);
+
+      DCL INPUT-FILE   RECORD STREAM SEQUENTIAL FILE;
+      DCL MASTER-FILE  RECORD SEQUENTIAL FILE;
+      DCL OUTPUT-FILE  RECORD SEQUENTIAL FILE;
+      DCL HIST-FILE    RECORD SEQUENTIAL FILE;
+
+      DCL WK-CHG-TYPE-IDX    FIXED BIN(31);
+      DCL WK-STATUS-IDX      FIXED BIN(31);
+      DCL WK-MATRIX-PTR      POINTER;
+      DCL WK-CHAR            CHAR(1);
+      DCL WK-EOF              CHAR(1) INIT('N');
+
+      ON ENDFILE(INPUT-FILE)  WK-EOF = 'Y';
+      ON ENDFILE(MASTER-FILE) WK-EOF = 'Y';
+      ON ERROR(INPUT-FILE)
+         DO;
+           WK-ERR-COUNT = WK-ERR-COUNT + 1;
+           SIGNAL CONDITION(ENDFILE);
+         END;
+
+      OPEN FILE(INPUT-FILE)   INPUT;
+      OPEN FILE(MASTER-FILE)  INPUT;
+      OPEN FILE(OUTPUT-FILE)  OUTPUT;
+      OPEN FILE(HIST-FILE)    OUTPUT;
+
+      /* ================================================================ */
+      /* メインループ: 入力ファイルから変更要求をレコード単位で読込    */
+      /* ================================================================ */
+
+      DO WHILE (WK-EOF = 'N');
+        READ FILE(INPUT-FILE) INTO(WK-INPUT-REC);
+
+        IF WK-EOF = 'Y' THEN LEAVE;
+
+        WK-REC-CNT = WK-REC-CNT + 1;
+
+        /* ============================================================== */
+        /* マスタファイルから該当契約レコードを検索                      */
+        /* ============================================================== */
+
+        REWIND FILE(MASTER-FILE);
+
+        DO WHILE (WK-EOF = 'N');
+          READ FILE(MASTER-FILE) INTO(LFCONF-REC);
+
+          IF WK-EOF = 'Y' THEN LEAVE;
+
+          IF LFCONF-CON-ID = WK-INPUT-REC.WK-CON-ID THEN DO;
+
+            /* ========================================================== */
+            /* 変更マトリックスにより許可判定を実施                      */
+            /* ========================================================== */
+
+            WK-STATUS-IDX = 1;
+
+            SELECT(LFCONF-CON-STATUS-KBN);
+              WHEN('01') WK-STATUS-IDX = 1;  /* 有効 */
+              WHEN('03') WK-STATUS-IDX = 2;  /* 払込猶予中 */
+              WHEN('05') WK-STATUS-IDX = 3;  /* 失効 */
+              WHEN('07') WK-STATUS-IDX = 4;  /* 復活 */
+              OTHERWISE DO;
+                WK-ERR-COUNT = WK-ERR-COUNT + 1;
+                LEAVE;
+              END;
+            END;
+
+            /* ========================================================== */
+            /* 要求された変更種別(CHG-TYPE-KBN)をマトリックスで検索    */
+            /* ========================================================== */
+
+            WK-ALLOWED = '0';
+            WK-CHG-TYPE-IDX = 0;
+
+            IF WK-INPUT-REC.WK-CHG-TYPE-KBN = '01' THEN
+              WK-CHG-TYPE-IDX = 1;  /* 払込方法変更 */
+            ELSE IF WK-INPUT-REC.WK-CHG-TYPE-KBN = '02' THEN
+              WK-CHG-TYPE-IDX = 2;  /* 保険金額変更 */
+            ELSE IF WK-INPUT-REC.WK-CHG-TYPE-KBN = '03' THEN
+              WK-CHG-TYPE-IDX = 3;  /* 払込期間変更 */
+            ELSE IF WK-INPUT-REC.WK-CHG-TYPE-KBN = '04' THEN
+              WK-CHG-TYPE-IDX = 4;  /* 契約者変更 */
+            ELSE IF WK-INPUT-REC.WK-CHG-TYPE-KBN = '05' THEN
+              WK-CHG-TYPE-IDX = 5;  /* 被保険者変更 */
+            ELSE IF WK-INPUT-REC.WK-CHG-TYPE-KBN = '06' THEN
+              WK-CHG-TYPE-IDX = 6;  /* 受取人変更 */
+
+            /* ========================================================== */
+            /* マトリックス値から許可フラグを抽出                        */
+            /* ========================================================== */
+
+            IF WK-CHG-TYPE-IDX > 0 & WK-STATUS-IDX > 0 THEN DO;
+
+              SELECT(WK-STATUS-IDX);
+                WHEN(1) 
+                  WK-CHAR = SUBSTR(WK-CHANGE-01, WK-CHG-TYPE-IDX, 1);
+                WHEN(2)
+                  WK-CHAR = SUBSTR(WK-CHANGE-03, WK-CHG-TYPE-IDX, 1);
+                WHEN(3)
+                  WK-CHAR = SUBSTR(WK-CHANGE-05, WK-CHG-TYPE-IDX, 1);
+                WHEN(4)
+                  WK-CHAR = SUBSTR(WK-CHANGE-07, WK-CHG-TYPE-IDX, 1);
+              END;
+
+              IF WK-CHAR = '1' THEN
+                WK-ALLOWED = '1';
+
+            END;
+
+            IF WK-ALLOWED = '0' THEN DO;
+              WK-ERR-COUNT = WK-ERR-COUNT + 1;
+              LEAVE;
+            END;
+
+            /* ========================================================== */
+            /* 許可された場合、変更を適用し履歴レコードを作成           */
+            /* ========================================================== */
+
+            SELECT(WK-INPUT-REC.WK-CHG-TYPE-KBN);
+
+              /* 払込方法変更 */
+              WHEN('01') DO;
+                WK-PREV-PAY-MODE = LFCONF-PAY-MODE-KBN;
+                LFCONF-PAY-MODE-KBN = WK-INPUT-REC.WK-NEW-VAL-CHR;
+              END;
+
+              /* 保険金額変更 */
+              WHEN('02') DO;
+                WK-PREV-AMOUNT = LFCONF-FACE-AMOUNT;
+                LFCONF-FACE-AMOUNT = WK-INPUT-REC.WK-NEW-VAL-NUM;
+              END;
+
+              /* 払込期間変更 */
+              WHEN('03') DO;
+                WK-PREV-TERM = LFCONF-PREM-PAY-MONTH;
+                LFCONF-PREM-PAY-MONTH = WK-INPUT-REC.WK-NEW-VAL-NUM;
+              END;
+
+              /* 契約者変更 */
+              WHEN('04') DO;
+                LFCONF-POL-HOLDER-NM = WK-INPUT-REC.WK-NEW-VAL-CHR;
+              END;
+
+              /* 被保険者変更 */
+              WHEN('05') DO;
+                LFCONF-INSURED-NM = WK-INPUT-REC.WK-NEW-VAL-CHR;
+              END;
+
+              /* 受取人変更 */
+              WHEN('06') DO;
+                LFCONF-BENEF-NM = WK-INPUT-REC.WK-NEW-VAL-CHR;
+              END;
+
+            END;
+
+            /* ================================================================ */
+            /* 変更マスタにレコードを書込(Old/New値を保持)                    */
+            /* ================================================================ */
+
+            LFCMNH-CON-ID = LFCONF-CON-ID;
+            LFCMNH-CHG-TYPE-KBN = WK-INPUT-REC.WK-CHG-TYPE-KBN;
+
+            SELECT(WK-INPUT-REC.WK-CHG-TYPE-KBN);
+              WHEN('01') DO;
+                LFCMNH-OLD-VAL-CHR = WK-PREV-PAY-MODE;
+                LFCMNH-NEW-VAL-CHR = WK-INPUT-REC.WK-NEW-VAL-CHR;
+              END;
+              WHEN('02') DO;
+                LFCMNH-OLD-VAL-NUM = WK-PREV-AMOUNT;
+                LFCMNH-NEW-VAL-NUM = WK-INPUT-REC.WK-NEW-VAL-NUM;
+              END;
+              WHEN('03') DO;
+                LFCMNH-OLD-VAL-NUM = WK-PREV-TERM;
+                LFCMNH-NEW-VAL-NUM = WK-INPUT-REC.WK-NEW-VAL-NUM;
+              END;
+              OTHERWISE DO;
+                LFCMNH-OLD-VAL-CHR = '';
+                LFCMNH-NEW-VAL-CHR = WK-INPUT-REC.WK-NEW-VAL-CHR;
+              END;
+            END;
+
+            WRITE FILE(HIST-FILE) FROM(LFCMNH-REC);
+
+            WK-CHG-COUNT = WK-CHG-COUNT + 1;
+
+            LEAVE;
+
+          END;
+
+        END;
+
+        REWIND FILE(MASTER-FILE);
+
+      END;
+
+      /* ================================================================ */
+      /* 統計情報を標準出力に出力                                        */
+      /* ================================================================ */
+
+      PUT EDIT('PMCMNCHG処理終了')(A);
+      PUT EDIT('  処理レコード数: ', WK-REC-CNT)(A, F(7));
+      PUT EDIT('  変更成功数: ', WK-CHG-COUNT)(A, F(7));
+      PUT EDIT('  エラー数: ', WK-ERR-COUNT)(A, F(7));
+
+      CLOSE FILE(INPUT-FILE);
+      CLOSE FILE(MASTER-FILE);
+      CLOSE FILE(OUTPUT-FILE);
+      CLOSE FILE(HIST-FILE);
+
+      RETURN;
+
+      END PMCMNCHG;

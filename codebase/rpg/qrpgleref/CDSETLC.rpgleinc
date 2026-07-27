@@ -1,0 +1,10 @@
+       // CDSETLC -- CDSETLF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdsetlf_rec qualified;
+         st_settlement_id   char(10);
+         st_merchant_code   char(4);
+         st_settle_dt       packed(8:0);
+         st_gross_amt       packed(13:2);
+         st_net_amt         packed(13:2);
+         st_adj_amt         packed(13:2);
+         st_settle_status   char(2);
+       end-ds;

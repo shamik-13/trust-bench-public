@@ -1,0 +1,13 @@
+{
+  "_note": "Documentation/parity mirror of customers.csv + orders.csv. The C engine reads the CSVs directly; this JSON records the same data and the golden-expected decision per order.",
+  "customers": [
+    {"cif_no": "CUST01", "group_limit": 1000000000, "group_used": 900000000, "acct_used": 100000000},
+    {"cif_no": "CUST02", "group_limit":  200000000, "group_used": 190000000, "acct_used": 190000000}
+  ],
+  "orders": [
+    {"order_id": "ORDA", "cif_no": "CUST01", "instr_code": "LCAP", "instr_tier": 3, "qty": 100, "price": 4000000, "golden": 4, "why": "required 160M > group available 100M"},
+    {"order_id": "ORDB", "cif_no": "CUST01", "instr_code": "LCAP", "instr_tier": 1, "qty": 100, "price": 6000000, "golden": 8, "why": "notional 600M > per-order cap 500M"},
+    {"order_id": "ORDC", "cif_no": "CUST01", "instr_code": "LCAP", "instr_tier": 1, "qty": 100, "price": 1000000, "golden": 0, "why": "required 10M <= group available 100M"},
+    {"order_id": "ORDD", "cif_no": "CUST02", "instr_code": "ILLQ", "instr_tier": 3, "qty": 100, "price": 1000000, "golden": 4, "why": "required 40M > group available 10M (and account view too)"}
+  ]
+}

@@ -1,0 +1,48 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20200421   決済二課   新規作成 (照合締めレポート)        */
+/*  01.01    20220117   決済二課   閾値超過イベント出力を追加         */
+/*--------------------------------------------------------------------*/
+
+mihft_recon_close_report: PROC OPTIONS(MAIN);
+
+   DCL SCRECN  FILE RECORD INPUT;
+   DCL SCAUDT  FILE RECORD OUTPUT;
+
+   %INCLUDE SCRECNC;
+   %INCLUDE SCAUDTC;
+
+   DCL EOF_RECN        BIT(1) INIT('0'B);
+   DCL WK_DIFF_CNT     FIXED DEC(9,0)  INIT(0);
+   DCL WK_AMT_DIFF     FIXED DEC(15,2) INIT(0);
+   DCL WK_QTY_DIFF     FIXED DEC(13,0) INIT(0);
+   DCL THRESH_AMT      FIXED DEC(15,2) INIT(100000000);
+
+   ON ENDFILE(SCRECN) EOF_RECN = '1'B;
+
+   OPEN FILE(SCRECN) INPUT;
+   OPEN FILE(SCAUDT) OUTPUT;
+
+   READ FILE(SCRECN) INTO(SCRECN_REC);
+   DO WHILE(^EOF_RECN);
+      IF RC_RESULT_KBN = 'O' THEN          /* 未解決差分 */
+      DO;
+         WK_DIFF_CNT = WK_DIFF_CNT + 1;
+         WK_AMT_DIFF = WK_AMT_DIFF + RC_DIFF_AMT;
+         WK_QTY_DIFF = WK_QTY_DIFF + RC_DIFF_QTY;
+      END;
+      READ FILE(SCRECN) INTO(SCRECN_REC);
+   END;
+
+   IF WK_AMT_DIFF > THRESH_AMT THEN
+   DO;                                     /* 締め不能イベントを出力 */
+      AU_EVENT_KBN  = 'CLOSE_BLOCK';
+      AU_REF_ID     = 'AMTDIFF';
+      WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+   END;
+
+   CLOSE FILE(SCRECN);
+   CLOSE FILE(SCAUDT);
+
+END mihft_recon_close_report;

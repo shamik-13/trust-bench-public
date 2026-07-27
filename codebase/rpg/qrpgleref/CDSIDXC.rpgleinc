@@ -1,0 +1,9 @@
+       // CDSIDXC -- CDSTMTIDXF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdstmtidxf_rec qualified;
+         si_card_no         char(16);
+         si_cycle_dt        packed(8:0);
+         si_statement_id    char(10);
+         si_bill_amt        packed(13:2);
+         si_due_dt          packed(8:0);
+         si_publish_status  char(2);
+       end-ds;

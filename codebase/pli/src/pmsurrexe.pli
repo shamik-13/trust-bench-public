@@ -1,0 +1,225 @@
+ /*================================================================*/
+ /* プログラム名：PMSURREXE                                        */
+ /* 機能：解約処理実行バッチ                                        */
+ /* 概要：解約承認レコード(LFSURF)を読み込み、解約計算を実行        */
+ /*       して解約金額を再計算し、契約マスタ(LFCONF)を              */
+ /*       更新後の状態へ遷移。監査ログ(LFAUDL)に変更を記録。        */
+ /*================================================================*/
+ /*                         変更履歴                                */
+ /*-----------  -----------  -------  ----  --------------------*/
+ /*  版数        実施日      担当      区分  概要                   */
+ /*-----------  -----------  -------  ----  --------------------*/
+ /*  1.0        2025-06-01  吉田      新規  初版作成               */
+ /*================================================================*/
+
+ pmsurrexe: PROC OPTIONS(MAIN);
+
+    DCL 1 RETURN-CODE FIXED DEC(4) INIT(0);
+    DCL 1 EXEC-DATE CHAR(8);
+    DCL 1 EXEC-YYYYMMDD FIXED DEC(8);
+    DCL 1 RECORD-COUNT FIXED DEC(9,0) INIT(0);
+    DCL 1 ERROR-COUNT FIXED DEC(9,0) INIT(0);
+    DCL 1 UPDATE-COUNT FIXED DEC(9,0) INIT(0);
+    DCL 1 SURROGATE-KEY CHAR(16);
+    DCL 1 SURROGATE-KEY-NUM FIXED DEC(16,0);
+    DCL 1 SURROGATE-KEY-CH CHAR(16);
+
+    /* 計算戻り値保存エリア */
+    DCL 1 SURR-VAL-AMT-NEW FIXED DEC(13,2);
+    DCL 1 CALC-RC FIXED DEC(4) INIT(0);
+
+    /* 日付計算用 */
+    DCL 1 EXEC-DATE-JUL FIXED DEC(5,0);
+    DCL 1 EXEC-YEAR FIXED DEC(4,0);
+    DCL 1 EXEC-MM FIXED DEC(2,0);
+    DCL 1 EXEC-DD FIXED DEC(2,0);
+
+    /* 更新カウント用 */
+    DCL 1 REC-PROC-CNT FIXED DEC(9,0) INIT(0);
+    DCL 1 REC-SKIP-CNT FIXED DEC(9,0) INIT(0);
+    DCL 1 REC-UPD-CNT FIXED DEC(9,0) INIT(0);
+    DCL 1 REC-ERR-CNT FIXED DEC(9,0) INIT(0);
+
+    /* ファイルの宣言 */
+    DCL LFSURF FILE ENVIRONMENT(F(1) CONSECUTIVE);
+    DCL LFCONF FILE ENVIRONMENT(F(2) CONSECUTIVE KEYED UPDATE);
+    DCL LFCMNH FILE ENVIRONMENT(F(3) CONSECUTIVE);
+    DCL LFAUDL FILE ENVIRONMENT(F(4) CONSECUTIVE);
+
+    /* レコード領域 */
+    %INCLUDE LFSURFC;
+    %INCLUDE LFCONFC;
+    %INCLUDE LFCMNHC;
+    %INCLUDE LFAUDLC;
+
+    /* 前状態保存用 */
+    DCL 1 LFCONF-BEFORE LIKE LFCONF-REC;
+
+    /* エラーハンドリング */
+    ON ENDFILE(LFSURF)
+        BEGIN;
+            SIGNAL CONDITION(ENDFILE);
+        END;
+
+    ON ERROR
+        BEGIN;
+            PUT SKIP EDIT
+                ('*** エラー発生:', ONCODE)
+                (A, F(4));
+            ERROR-COUNT = ERROR-COUNT + 1;
+            SIGNAL CONDITION(ERROR);
+        END;
+
+    /* 実行日付を環境変数から取得 */
+    /* YYYYMMDDフォーマット */
+    EXEC-DATE = SUBSTR(DATETIME(), 1, 8);
+    EXEC-YYYYMMDD = INT(EXEC-DATE);
+    EXEC-YEAR = DIVIDE(EXEC-YYYYMMDD, 10000, 4);
+    EXEC-MM = MOD(DIVIDE(EXEC-YYYYMMDD, 100, 6), 100);
+    EXEC-DD = MOD(EXEC-YYYYMMDD, 100);
+
+    PUT SKIP EDIT
+        ('解約処理実行バッチ開始')
+        (A);
+    PUT SKIP EDIT
+        ('実行日:', EXEC-DATE)
+        (A, A);
+
+    /* ファイルをOPEN */
+    OPEN FILE(LFSURF) INPUT;
+    OPEN FILE(LFCONF) UPDATE;
+    OPEN FILE(LFCMNH) OUTPUT;
+    OPEN FILE(LFAUDL) OUTPUT;
+
+    /* メインループ：LFSURF から承認済みレコード読み込み */
+    READ FILE(LFSURF) INTO(LFSURF-REC);
+
+    DO WHILE('1'B);
+
+        RECORD-COUNT = RECORD-COUNT + 1;
+
+        /* 承認ステータス確認：'20' = 承認済み */
+        IF SURR-STATUS-KBN ^= '20' THEN
+            DO;
+                REC-SKIP-CNT = REC-SKIP-CNT + 1;
+                ON ENDFILE(LFSURF) GOTO END-MAIN-LOOP;
+                READ FILE(LFSURF) INTO(LFSURF-REC);
+                ITERATE;
+            END;
+
+        REC-PROC-CNT = REC-PROC-CNT + 1;
+
+        /* LFCONF から契約マスタレコード取得 */
+        ON ENDFILE(LFCONF) 
+            DO;
+                PUT SKIP EDIT
+                    ('警告：契約不見当 POL-NO=', POL-NO)
+                    (A, A);
+                REC-ERR-CNT = REC-ERR-CNT + 1;
+                ON ENDFILE(LFSURF) GOTO END-MAIN-LOOP;
+                READ FILE(LFSURF) INTO(LFSURF-REC);
+                ITERATE;
+            END;
+
+        READ FILE(LFCONF) 
+            FROM (POL-NO) INTO(LFCONF-REC);
+
+        /* 更新前状態を保存 */
+        LFCONF-BEFORE = LFCONF-REC;
+
+        /* 解約金額の再計算：pmsurrcal を呼び出し */
+        CALL pmsurrcal (
+            POL-NO,
+            SURR-REQUEST-DATE,
+            EXEC-DATE,
+            SURR-VAL-AMT-NEW,
+            CALC-RC
+        );
+
+        IF CALC-RC ^= 0 THEN
+            DO;
+                PUT SKIP EDIT
+                    ('計算エラー POL-NO=', POL-NO, ' RC=', CALC-RC)
+                    (A, A, A, F(4));
+                REC-ERR-CNT = REC-ERR-CNT + 1;
+                ON ENDFILE(LFSURF) GOTO END-MAIN-LOOP;
+                READ FILE(LFSURF) INTO(LFSURF-REC);
+                ITERATE;
+            END;
+
+        /* LFCONF 更新：解約金額と状態遷移 */
+        SURR-VAL-AMT = SURR-VAL-AMT-NEW;
+        CON-STATUS-KBN = '90';  /* 10 (有効) → 90 (解約) */
+        LAST-UPDATE-DATE = EXEC-DATE;
+        LAST-UPDATE-TIME = SUBSTR(DATETIME(), 9, 6);
+
+        WRITE FILE(LFCONF);
+
+        REC-UPD-CNT = REC-UPD-CNT + 1;
+
+        /* LFCMNH：変更履歴レコード作成 */
+        LFCMNH-REC.POL-NO = POL-NO;
+        LFCMNH-REC.CHG-DATE = EXEC-DATE;
+        LFCMNH-REC.CHG-TIME = SUBSTR(DATETIME(), 9, 6);
+        LFCMNH-REC.CHG-TYPE-KBN = 'SU';  /* 解約 */
+        LFCMNH-REC.CHG-AMOUNT = SURR-VAL-AMT-NEW;
+        LFCMNH-REC.CHG-REMARKS = '解約処理実行バッチ実行';
+
+        WRITE FILE(LFCMNH) FROM(LFCMNH-REC);
+
+        /* LFAUDL：監査ログレコード作成 */
+        LFAUDL-REC.POL-NO = POL-NO;
+        LFAUDL-REC.AUDIT-DATE = EXEC-DATE;
+        LFAUDL-REC.AUDIT-TIME = SUBSTR(DATETIME(), 9, 6);
+        LFAUDL-REC.AUDIT-USER = 'BATCH';
+        LFAUDL-REC.BEFORE-STATUS = LFCONF-BEFORE.CON-STATUS-KBN;
+        LFAUDL-REC.AFTER-STATUS = '90';
+        LFAUDL-REC.AUDIT-TYPE = 'STATUS_CHG';
+        LFAUDL-REC.AUDIT-DETAIL = 
+            'SURR-VAL:' || SURR-VAL-AMT-NEW;
+
+        WRITE FILE(LFAUDL) FROM(LFAUDL-REC);
+
+        /* 次レコード読み込み */
+        ON ENDFILE(LFSURF) GOTO END-MAIN-LOOP;
+        READ FILE(LFSURF) INTO(LFSURF-REC);
+
+    END;
+
+ END-MAIN-LOOP:
+
+    /* ファイルをCLOSE */
+    CLOSE FILE(LFSURF);
+    CLOSE FILE(LFCONF);
+    CLOSE FILE(LFCMNH);
+    CLOSE FILE(LFAUDL);
+
+    /* 処理結果を出力 */
+    PUT SKIP EDIT
+        ('解約処理実行バッチ終了')
+        (A);
+    PUT SKIP EDIT
+        ('読込件数:', RECORD-COUNT)
+        (A, F(9));
+    PUT SKIP EDIT
+        ('処理件数:', REC-PROC-CNT)
+        (A, F(9));
+    PUT SKIP EDIT
+        ('更新件数:', REC-UPD-CNT)
+        (A, F(9));
+    PUT SKIP EDIT
+        ('スキップ件数:', REC-SKIP-CNT)
+        (A, F(9));
+    PUT SKIP EDIT
+        ('エラー件数:', REC-ERR-CNT)
+        (A, F(9));
+
+    /* 戻り値設定 */
+    IF REC-ERR-CNT > 0 THEN
+        RETURN-CODE = 4;
+    ELSE
+        RETURN-CODE = 0;
+
+    STOP RUN;
+
+ END pmsurrexe;

@@ -1,0 +1,7 @@
+# resting orders at one price level (same side), then the incoming crossing order.
+# type,id,arrival,qty[,tif]   R=resting (arrival = time priority), I=incoming (qty to fill, tif)
+R,R1,1,50
+R,R2,2,100
+R,R3,3,30
+I,INC,0,120,DAY
+# incoming 120 vs FIFO -> R1 50, R2 70, R3 0 (golden); size-priority -> R1 20, R2 100, R3 0 (start)

@@ -1,0 +1,21 @@
+{
+  "_comment": "S3 交換尻 behavioral fixture. Each counterparty bank exercises the sign convention (D-0902: net = 受取/被仕向 02 minus 支払/仕向 01) and/or the AND-join completion guard (D-0904). amounts are whole yen. START reverses the sign AND ignores the completion flags (settles everything 'S'); GOLDEN applies 受取-支払 and HOLDS ('H') any bank whose 仕向(OUT) or 被仕向(IN) net is incomplete. The AND-join is tested on BOTH arms: 0002 has 仕向(OUT) incomplete (out_flag N), 0005 has 被仕向(IN) incomplete (in_flag N) — a hold-on-OUT-only solution settles 0005 and fails. Sign is tested positive (0001) and negative (0004).",
+  "counterparties": [
+    {"bank": "0001", "out_flag": "Y", "in_flag": "Y", "expect_status": "S", "expect_net": 200000},
+    {"bank": "0002", "out_flag": "N", "in_flag": "Y", "expect_status": "H", "expect_net": null},
+    {"bank": "0003", "out_flag": "Y", "in_flag": "Y", "expect_status": "S", "expect_net": 400000},
+    {"bank": "0004", "out_flag": "Y", "in_flag": "Y", "expect_status": "S", "expect_net": -250000},
+    {"bank": "0005", "out_flag": "Y", "in_flag": "N", "expect_status": "H", "expect_net": null}
+  ],
+  "messages": [
+    {"seq": "Z01", "bank": "0001", "type": "01", "amount": 100000},
+    {"seq": "Z02", "bank": "0001", "type": "01", "amount": 200000},
+    {"seq": "Z03", "bank": "0001", "type": "02", "amount": 500000},
+    {"seq": "Z04", "bank": "0002", "type": "02", "amount": 600000},
+    {"seq": "Z05", "bank": "0002", "type": "01", "amount": 100000},
+    {"seq": "Z06", "bank": "0003", "type": "02", "amount": 400000},
+    {"seq": "Z07", "bank": "0004", "type": "01", "amount": 250000},
+    {"seq": "Z08", "bank": "0005", "type": "01", "amount": 300000},
+    {"seq": "Z09", "bank": "0005", "type": "02", "amount": 100000}
+  ]
+}

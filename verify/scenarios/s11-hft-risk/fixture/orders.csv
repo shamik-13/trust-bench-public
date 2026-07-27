@@ -1,0 +1,9 @@
+# order_id,cif_no,instr_code,instr_tier,qty,price
+# ORDA: group-margin breach (T3); golden REJECT(4), start ACCEPT(0) -- account-only view
+ORDA,CUST01,LCAP,3,100,4000000
+# ORDB: notional 600M > cap 500M; golden REJECT(8), start ACCEPT(0) -- no cap check
+ORDB,CUST01,LCAP,1,100,6000000
+# ORDC: clean small order; both ACCEPT(0)
+ORDC,CUST01,LCAP,1,100,1000000
+# ORDD: low-limit customer over margin both ways; both REJECT(4)
+ORDD,CUST02,ILLQ,3,100,1000000

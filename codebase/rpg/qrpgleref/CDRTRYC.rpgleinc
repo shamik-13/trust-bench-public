@@ -1,0 +1,10 @@
+       // CDRTRYC -- CDRTRYF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdrtryf_rec qualified;
+         rty_retry_id       char(10);
+         rty_card_no        char(16);
+         rty_original_request_id char(10);
+         rty_retry_count    packed(8:0);
+         rty_next_request_dt packed(8:0);
+         rty_retry_amt      packed(13:2);
+         rty_retry_status   char(2);
+       end-ds;

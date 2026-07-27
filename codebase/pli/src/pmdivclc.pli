@@ -1,0 +1,166 @@
+ /* ================================================================ */
+ /* PROGRAM: PMDIVCLC                                              */
+ /* 配当金計算バッチ                                                 */
+ /*                                                                 */
+ /* 有効契約より配当金を計算し配当金ファイルに出力                     */
+ /*                                                                 */
+ /* 変更履歴                                                        */
+ /*   版  年月日    担当        概要                                 */
+ /*   1.0 1998.11  田中 務    新規作成                              */
+ /*   1.1 2002.04  藤田 健太  係数表見直し(金利低下対応)             */
+ /*   1.2 2005.07  山田 花子  月数チェック精密化                     */
+ /*   2.0 2008.06  佐藤 太郎  配当方法別対応                        */
+ /* ================================================================ */
+
+ PMDIVCLC: PROC OPTIONS(MAIN);
+
+   %INCLUDE LFCONFC;
+   %INCLUDE LFDIVF2C;
+
+   /* ---- 配当率係数テーブル (保有年数 1～30年以上) ---- */
+   DCL DIV_FACTOR_TABLE(30) FIXED DEC(11,4) STATIC INIT(
+       0.0250, 0.0265, 0.0280, 0.0295, 0.0310,
+       0.0325, 0.0338, 0.0350, 0.0360, 0.0370,
+       0.0375, 0.0380, 0.0385, 0.0388, 0.0390,
+       0.0390, 0.0388, 0.0385, 0.0380, 0.0375,
+       0.0368, 0.0360, 0.0350, 0.0338, 0.0325,
+       0.0310, 0.0295, 0.0280, 0.0265, 0.0250
+   );
+
+   /* ---- ワークエリア ---- */
+   DCL PROC_YY       FIXED BIN(31);
+   DCL PROC_MM       FIXED BIN(31);
+   DCL PROC_DD       FIXED BIN(31);
+   DCL PROC_DT_STR   CHAR(8);
+   DCL FISCAL_YR     CHAR(4);
+   DCL EOF_FLG       CHAR(1) VALUE '0';
+
+   DCL RESP_YY       FIXED BIN(31);
+   DCL RESP_MM       FIXED BIN(31);
+   DCL RESP_DD       FIXED BIN(31);
+   DCL RESP_TOTAL_MO FIXED BIN(31);
+   DCL POLICY_YR_IDX FIXED BIN(31);
+   DCL DIV_RATE      FIXED DEC(11,4);
+
+   DCL BASE_PREMIUM  FIXED DEC(13,2);
+   DCL ADJUST_FACTOR FIXED DEC(7,4);
+   DCL DIV_AMT_CALC  FIXED DEC(13,2);
+   DCL WK_MULTIPLY   FIXED DEC(15,4);
+
+   DCL REC_COUNT     FIXED BIN(31) VALUE 0;
+   DCL DIV_COUNT     FIXED BIN(31) VALUE 0;
+
+   /* ---- ファイル宣言 ---- */
+   DCL INPUT_FILE    FILE STREAM RECORD INPUT;
+   DCL OUTPUT_FILE   FILE STREAM RECORD OUTPUT;
+
+   /* ---- エラーハンドラ ---- */
+   ON ENDFILE(INPUT_FILE) SET(EOF_FLG) '1';
+
+   ON UNDEFINEDFILE(INPUT_FILE) BEGIN;
+       PUT SKIP EDIT('*** LFCONF INPUT FILE NOT FOUND ***')(A);
+       STOP RUN;
+   END;
+
+   /* ================================================================ */
+   /* 初期処理                                                         */
+   /* ================================================================ */
+
+   PROC_YY = 2008;
+   PROC_MM = 12;
+   PROC_DD = 31;
+   PROC_DT_STR = '20081231';
+   FISCAL_YR = '2008';
+
+   OPEN FILE(INPUT_FILE)  INPUT;
+   OPEN FILE(OUTPUT_FILE) OUTPUT;
+
+   /* ================================================================ */
+   /* メインループ: 配当金計算                                         */
+   /* ================================================================ */
+
+   DO WHILE (EOF_FLG = '0');
+
+       READ FILE(INPUT_FILE) INTO(LFCONF_REC);
+
+       IF EOF_FLG = '1' THEN LEAVE;
+
+       REC_COUNT = REC_COUNT + 1;
+
+       /* ---- フィルタ1: 契約状態が '10'(配当対象) ---- */
+       IF LFCONF_REC.CON_STATUS_KBN ^= '10' THEN DO;
+           ITERATE;
+       END;
+
+       /* ---- フィルタ2: 約款発効日より 12ヶ月以上経過 ---- */
+       RESP_YY = SUBSTR(LFCONF_REC.RESP_START_DT, 1, 4);
+       RESP_MM = SUBSTR(LFCONF_REC.RESP_START_DT, 5, 2);
+       RESP_DD = SUBSTR(LFCONF_REC.RESP_START_DT, 7, 2);
+
+       RESP_TOTAL_MO = (PROC_YY - RESP_YY) * 12 + (PROC_MM - RESP_MM);
+
+       /* 端数日を月に含める場合の調整 */
+       IF PROC_DD < RESP_DD THEN DO;
+           RESP_TOTAL_MO = RESP_TOTAL_MO - 1;
+       END;
+
+       IF RESP_TOTAL_MO < 12 THEN DO;
+           ITERATE;
+       END;
+
+       /* ---- 保有年数を計算し係数を選定 ---- */
+       POLICY_YR_IDX = (RESP_TOTAL_MO / 12) + 1;
+
+       /* 年数境界チェック */
+       IF POLICY_YR_IDX > 30 THEN DO;
+           POLICY_YR_IDX = 30;  /* 30年超は最終係数 */
+       END;
+
+       IF POLICY_YR_IDX < 1 THEN DO;
+           POLICY_YR_IDX = 1;
+       END;
+
+       DIV_RATE = DIV_FACTOR_TABLE(POLICY_YR_IDX);
+
+       /* ---- 配当金額計算 ---- */
+       BASE_PREMIUM = LFCONF_REC.TOTAL_PAID_PREM_AMT;
+
+       /* 端数月による按分調整 */
+       IF MOD(RESP_TOTAL_MO, 12) > 0 THEN DO;
+           ADJUST_FACTOR = MOD(RESP_TOTAL_MO, 12) / 12;
+           WK_MULTIPLY = LFCONF_REC.ANNUAL_PREM_AMT * ADJUST_FACTOR;
+           BASE_PREMIUM = BASE_PREMIUM + WK_MULTIPLY;
+       END;
+
+       DIV_AMT_CALC = BASE_PREMIUM * DIV_RATE;
+
+       /* ---- 配当金レコード編成 ---- */
+       LFDIVF_REC.DIV_CONTRACT_NO = LFCONF_REC.CONTRACT_NO;
+       LFDIVF_REC.DIV_YR = FISCAL_YR;
+       LFDIVF_REC.DIV_CALC_DT = PROC_DT_STR;
+       LFDIVF_REC.DIV_AMT = DIV_AMT_CALC;
+       LFDIVF_REC.DIV_STATUS_KBN = '10';  /* 計算済 */
+       LFDIVF_REC.DIV_METHOD_KBN = LFCONF_REC.CN_PAY_MODE_KBN;
+       LFDIVF_REC.POLICY_YEAR = POLICY_YR_IDX;
+
+       /* ---- 配当金ファイル出力 ---- */
+       WRITE FILE(OUTPUT_FILE) FROM(LFDIVF_REC);
+
+       DIV_COUNT = DIV_COUNT + 1;
+
+   END;
+
+   /* ================================================================ */
+   /* 終了処理                                                         */
+   /* ================================================================ */
+
+   CLOSE FILE(INPUT_FILE);
+   CLOSE FILE(OUTPUT_FILE);
+
+   PUT SKIP EDIT('配当金計算処理 完了')(A);
+   PUT SKIP EDIT('入力契約件数: ' || REC_COUNT || ' 件')(A);
+   PUT SKIP EDIT('配当金算出件数: ' || DIV_COUNT || ' 件')(A);
+
+   STOP RUN;
+
+ END PMDIVCLC;

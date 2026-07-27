@@ -1,0 +1,345 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数   年月日     担当     概要                                  */
+/*  01.00  20240214   福田 亮太 (E-211)     名寄せネッティング明細作成 新規作成    */
+/*  01.01  20240521   岡本 涼 (E-294)     手数料相当隣接差額の監査出力を追加      */
+/*--------------------------------------------------------------------*/
+mihft_netting_builder: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCEXECC;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCNETPC;
+   %INCLUDE SCAUDTC;
+
+   DCL  SCEXF   FILE RECORD INPUT;
+   DCL  SCSETF  FILE RECORD INPUT;
+   DCL  SCCALF  FILE RECORD INPUT;
+   DCL  SCNETP  FILE RECORD OUTPUT;
+   DCL  SCAUDT  FILE RECORD OUTPUT;
+   DCL  SYSOUT  FILE STREAM OUTPUT PRINT;
+
+   DCL  1 CAL_REC,
+          2 IN_CAL_DT      PIC '99999999',
+          2 IN_CAL_SESS    CHAR(1),
+          2 IN_CAL_FILLER  CHAR(23);
+
+   DCL  EOF_EX      BIT(1) INIT('0'B);
+   DCL  EOF_SET     BIT(1) INIT('0'B);
+   DCL  EOF_CAL     BIT(1) INIT('0'B);
+   DCL  ERR_SW      BIT(1) INIT('0'B);
+   DCL  FIRST_SW    BIT(1) INIT('1'B);
+   DCL  SKIP_SW     BIT(1) INIT('0'B);
+
+   DCL  HOLD_CIF_NO       CHAR(16) INIT('');
+   DCL  HOLD_INSTR_CODE   CHAR(4)  INIT('');
+   DCL  HOLD_SETL_DT      PIC '99999999' INIT(0);
+
+   DCL  WK_BUY_AMT        FIXED DEC(15,0) INIT(0);
+   DCL  WK_SELL_AMT       FIXED DEC(15,0) INIT(0);
+   DCL  WK_NET_AMT        FIXED DEC(15,0) INIT(0);
+   DCL  WK_BUY_QTY        FIXED DEC(13,0) INIT(0);
+   DCL  WK_SELL_QTY       FIXED DEC(13,0) INIT(0);
+   DCL  WK_NET_QTY        FIXED DEC(13,0) INIT(0);
+   DCL  WK_FEE_DIFF       FIXED DEC(15,0) INIT(0);
+   DCL  WK_GROSS_AMT      FIXED DEC(15,0) INIT(0);
+   DCL  WK_TMP_AMT        FIXED DEC(15,0) INIT(0);
+
+   DCL  WK_TRADE_DT       PIC '99999999' INIT(0);
+   DCL  WK_SETL_DT        PIC '99999999' INIT(0);
+   DCL  WK_NEXT_DT        PIC '99999999' INIT(0);
+   DCL  WK_BUS_CNT        FIXED BIN(15) INIT(0);
+   DCL  WK_CAL_DT         PIC '99999999' INIT(0);
+   DCL  WK_CAL_SESS       CHAR(1) INIT('');
+   DCL  WK_RC             FIXED BIN(31) INIT(0);
+   DCL  WK_AUD_SEQ        FIXED DEC(9,0) INIT(0);
+   DCL  WK_IN_CNT         FIXED DEC(9,0) INIT(0);
+   DCL  WK_OUT_CNT        FIXED DEC(9,0) INIT(0);
+   DCL  WK_AUD_CNT        FIXED DEC(9,0) INIT(0);
+
+   DCL  BUY_CODE          CHAR(1) INIT('B');
+   DCL  SELL_CODE         CHAR(1) INIT('S');
+
+   DCL  NET_BUY           CHAR(1) INIT('B');
+   DCL  NET_SELL          CHAR(1) INIT('S');
+   DCL  NET_ZERO          CHAR(1) INIT('0');
+
+   DCL  1 CAL_TBL(4000),
+          2 CAL_DT        PIC '99999999',
+          2 CAL_SESS_KBN  CHAR(1);
+
+   DCL  CAL_MAX           FIXED BIN(31) INIT(0);
+   DCL  I                 FIXED BIN(31) INIT(0);
+
+   ON ENDFILE(SCEXF)  EOF_EX  = '1'B;
+   ON ENDFILE(SCSETF) EOF_SET = '1'B;
+   ON ENDFILE(SCCALF) EOF_CAL = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      PUT FILE(SYSOUT) SKIP
+          LIST('MIHFT001E 異常終了  入力件数=', WK_IN_CNT,
+               ' 出力件数=', WK_OUT_CNT,
+               ' 監査件数=', WK_AUD_CNT);
+      GOTO ABEND_EXIT;
+   END;
+
+   OPEN FILE(SYSOUT);
+   OPEN FILE(SCCALF);
+   OPEN FILE(SCEXF);
+   OPEN FILE(SCSETF);
+   OPEN FILE(SCNETP);
+   OPEN FILE(SCAUDT);
+
+   CALL scnetting(WK_RC);
+   IF WK_RC ^= 0 THEN DO;
+      PUT FILE(SYSOUT) SKIP LIST('MIHFT002E SCNETTING 戻り値異常 RC=', WK_RC);
+      ERR_SW = '1'B;
+      GOTO ABEND_EXIT;
+   END;
+
+   CALL LOAD_CALENDAR;
+
+   READ FILE(SCSETF) INTO(SCSETL_REC);
+   DO WHILE(^EOF_SET);
+      IF ^IS_BUSINESS_DAY(ST_SETL_DT) THEN DO;
+         WK_AUD_SEQ = WK_AUD_SEQ + 1;
+         AU_AUDIT_ID      = 'MIHFTC' || SUBSTR('0000',1,
+                            4 - LENGTH(TRIM(CHAR(WK_AUD_SEQ)))) ||
+                            TRIM(CHAR(WK_AUD_SEQ));
+         AU_PGM_ID        = 'MIHFTNET';
+         AU_BUS_DT        = ST_SETL_DT;
+         AU_REF_ID        = ST_SETL_ID;
+         AU_EVENT_KBN     = 'CA';
+         AU_BEFORE_STATUS = ST_STATUS_KBN;
+         AU_AFTER_STATUS  = ST_STATUS_KBN;
+         AU_OP_TS         = ST_SETL_DT || '000000';
+         WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+         WK_AUD_CNT = WK_AUD_CNT + 1;
+      END;
+      READ FILE(SCSETF) INTO(SCSETL_REC);
+   END;
+
+   READ FILE(SCEXF) INTO(SCEXEC_REC);
+
+   DO WHILE(^EOF_EX);
+      WK_IN_CNT = WK_IN_CNT + 1;
+      SKIP_SW = '0'B;
+
+      IF EX_CIF_NO = '' THEN DO;
+         CALL PUT_AUDIT('VA', 0);
+         SKIP_SW = '1'B;
+      END;
+
+      IF EX_INSTR_CODE = '' THEN DO;
+         CALL PUT_AUDIT('VA', 0);
+         SKIP_SW = '1'B;
+      END;
+
+      WK_TRADE_DT = EX_TRADE_DT;
+      CALL CALC_SETL_DT(WK_TRADE_DT, WK_SETL_DT);
+
+      IF SKIP_SW = '0'B THEN DO;
+         IF FIRST_SW THEN DO;
+            CALL START_KEY;
+            FIRST_SW = '0'B;
+         END;
+
+         IF EX_CIF_NO     ^= HOLD_CIF_NO     |
+            EX_INSTR_CODE ^= HOLD_INSTR_CODE |
+            WK_SETL_DT    ^= HOLD_SETL_DT THEN DO;
+            CALL FLUSH_KEY;
+            CALL START_KEY;
+         END;
+
+         WK_GROSS_AMT = EX_FILL_AMT;
+
+         SELECT(EX_SIDE_KBN);
+            WHEN('B') DO;
+               WK_BUY_AMT = WK_BUY_AMT + WK_GROSS_AMT;
+               WK_BUY_QTY = WK_BUY_QTY + EX_FILL_QTY;
+            END;
+            WHEN('S') DO;
+               WK_SELL_AMT = WK_SELL_AMT + WK_GROSS_AMT;
+               WK_SELL_QTY = WK_SELL_QTY + EX_FILL_QTY;
+            END;
+            OTHERWISE DO;
+               CALL PUT_AUDIT('VA', 0);
+            END;
+         END;
+      END;
+
+      READ FILE(SCEXF) INTO(SCEXEC_REC);
+   END;
+
+   IF ^FIRST_SW THEN CALL FLUSH_KEY;
+
+   CLOSE FILE(SCEXF);
+   CLOSE FILE(SCSETF);
+   CLOSE FILE(SCCALF);
+   CLOSE FILE(SCNETP);
+   CLOSE FILE(SCAUDT);
+
+   PUT FILE(SYSOUT) SKIP
+       LIST('MIHFT000I 正常終了  入力件数=', WK_IN_CNT,
+            ' 出力件数=', WK_OUT_CNT,
+            ' 監査件数=', WK_AUD_CNT);
+
+   CLOSE FILE(SYSOUT);
+   RETURN;
+
+LOAD_CALENDAR: PROC;
+   READ FILE(SCCALF) INTO(CAL_REC);
+   DO WHILE(^EOF_CAL);
+      IF CAL_MAX < HBOUND(CAL_TBL,1) THEN DO;
+         CAL_MAX = CAL_MAX + 1;
+         CAL_DT(CAL_MAX)       = IN_CAL_DT;
+         CAL_SESS_KBN(CAL_MAX) = IN_CAL_SESS;
+      END;
+      READ FILE(SCCALF) INTO(CAL_REC);
+   END;
+END LOAD_CALENDAR;
+
+START_KEY: PROC;
+   HOLD_CIF_NO     = EX_CIF_NO;
+   HOLD_INSTR_CODE = EX_INSTR_CODE;
+   HOLD_SETL_DT    = WK_SETL_DT;
+   WK_BUY_AMT      = 0;
+   WK_SELL_AMT     = 0;
+   WK_NET_AMT      = 0;
+   WK_BUY_QTY      = 0;
+   WK_SELL_QTY     = 0;
+   WK_NET_QTY      = 0;
+   WK_FEE_DIFF     = 0;
+END START_KEY;
+
+FLUSH_KEY: PROC;
+   WK_NET_AMT = WK_BUY_AMT - WK_SELL_AMT;
+   WK_NET_QTY = WK_BUY_QTY - WK_SELL_QTY;
+
+   IF WK_NET_AMT > 0 THEN
+      NP_NET_KBN = NET_BUY;
+   ELSE IF WK_NET_AMT < 0 THEN
+      NP_NET_KBN = NET_SELL;
+   ELSE
+      NP_NET_KBN = NET_ZERO;
+
+   NP_NET_KEY     = HOLD_CIF_NO;
+   NP_CIF_NO      = HOLD_CIF_NO;
+   NP_INSTR_CODE  = HOLD_INSTR_CODE;
+   NP_SETL_DT     = HOLD_SETL_DT;
+   NP_STATUS_KBN  = 'P';
+   NP_BUY_AMT     = WK_BUY_AMT;
+   NP_SELL_AMT    = WK_SELL_AMT;
+   NP_NET_AMT     = ABS(WK_NET_AMT);
+   NP_NET_QTY     = WK_NET_QTY;
+
+   WRITE FILE(SCNETP) FROM(SCNETP_REC);
+   WK_OUT_CNT = WK_OUT_CNT + 1;
+
+   IF WK_NET_AMT = 0 & WK_NET_QTY ^= 0 THEN DO;
+      WK_FEE_DIFF = ABS(WK_BUY_QTY - WK_SELL_QTY);
+      CALL PUT_AUDIT_KEY('NE', WK_FEE_DIFF);
+   END;
+
+   IF ABS(WK_NET_AMT) > 0 & ABS(WK_NET_AMT) <= 5000 THEN DO;
+      WK_FEE_DIFF = ABS(WK_NET_AMT);
+      CALL PUT_AUDIT_KEY('NE', WK_FEE_DIFF);
+   END;
+END FLUSH_KEY;
+
+CALC_SETL_DT: PROC(P_TRADE_DT, P_SETL_DT);
+   DCL P_TRADE_DT PIC '99999999';
+   DCL P_SETL_DT  PIC '99999999';
+
+   WK_BUS_CNT = 0;
+   WK_NEXT_DT = P_TRADE_DT;
+
+   DO WHILE(WK_BUS_CNT < 2);
+      CALL NEXT_CAL_DT(WK_NEXT_DT, WK_NEXT_DT);
+      IF IS_BUSINESS_DAY(WK_NEXT_DT) THEN
+         WK_BUS_CNT = WK_BUS_CNT + 1;
+   END;
+
+   DO WHILE(^IS_BUSINESS_DAY(WK_NEXT_DT));
+      CALL NEXT_CAL_DT(WK_NEXT_DT, WK_NEXT_DT);
+   END;
+
+   P_SETL_DT = WK_NEXT_DT;
+END CALC_SETL_DT;
+
+NEXT_CAL_DT: PROC(P_IN_DT, P_OUT_DT);
+   DCL P_IN_DT  PIC '99999999';
+   DCL P_OUT_DT PIC '99999999';
+
+   DO I = 1 TO CAL_MAX;
+      IF CAL_DT(I) > P_IN_DT THEN DO;
+         P_OUT_DT = CAL_DT(I);
+         RETURN;
+      END;
+   END;
+
+   P_OUT_DT = P_IN_DT + 1;
+END NEXT_CAL_DT;
+
+IS_BUSINESS_DAY: PROC(P_DT) RETURNS(BIT(1));
+   DCL P_DT PIC '99999999';
+
+   DO I = 1 TO CAL_MAX;
+      IF CAL_DT(I) = P_DT THEN DO;
+         IF CAL_SESS_KBN(I) = 'B' THEN
+            RETURN('1'B);
+         ELSE
+            RETURN('0'B);
+      END;
+   END;
+
+   RETURN('0'B);
+END IS_BUSINESS_DAY;
+
+PUT_AUDIT: PROC(P_CODE, P_DIFF);
+   DCL P_CODE CHAR(2);
+   DCL P_DIFF FIXED DEC(15,0);
+
+   WK_AUD_SEQ = WK_AUD_SEQ + 1;
+   AU_AUDIT_ID      = 'MIHFTV' || SUBSTR('0000',1,
+                      4 - LENGTH(TRIM(CHAR(WK_AUD_SEQ)))) ||
+                      TRIM(CHAR(WK_AUD_SEQ));
+   AU_PGM_ID        = 'MIHFTNET';
+   AU_BUS_DT        = EX_TRADE_DT;
+   AU_REF_ID        = EX_EXEC_ID;
+   AU_EVENT_KBN     = P_CODE;
+   AU_BEFORE_STATUS = '  ';
+   AU_AFTER_STATUS  = '  ';
+   AU_OP_TS         = EX_EXEC_TS;
+   WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+   WK_AUD_CNT = WK_AUD_CNT + 1;
+END PUT_AUDIT;
+
+PUT_AUDIT_KEY: PROC(P_CODE, P_DIFF);
+   DCL P_CODE CHAR(2);
+   DCL P_DIFF FIXED DEC(15,0);
+
+   WK_AUD_SEQ = WK_AUD_SEQ + 1;
+   AU_AUDIT_ID      = 'MIHFTN' || SUBSTR('0000',1,
+                      4 - LENGTH(TRIM(CHAR(WK_AUD_SEQ)))) ||
+                      TRIM(CHAR(WK_AUD_SEQ));
+   AU_PGM_ID        = 'MIHFTNET';
+   AU_BUS_DT        = HOLD_SETL_DT;
+   AU_REF_ID        = HOLD_CIF_NO;
+   AU_EVENT_KBN     = P_CODE;
+   AU_BEFORE_STATUS = '  ';
+   AU_AFTER_STATUS  = '  ';
+   AU_OP_TS         = HOLD_SETL_DT || '000000';
+   WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+   WK_AUD_CNT = WK_AUD_CNT + 1;
+END PUT_AUDIT_KEY;
+
+ABEND_EXIT:
+   CLOSE FILE(SCEXF);
+   CLOSE FILE(SCSETF);
+   CLOSE FILE(SCCALF);
+   CLOSE FILE(SCNETP);
+   CLOSE FILE(SCAUDT);
+   CLOSE FILE(SYSOUT);
+
+END mihft_netting_builder;

@@ -1,0 +1,175 @@
+/*====================================================================*/
+/*  pmdivpay — 配当金支払処理バッチ                                  */
+/*====================================================================*/
+/*                          変更履歴                                 */
+/*--------------------------------------------------------------------*/
+/*  版数  |  年月日  | 担当 | 概要                                   */
+/*--------------------------------------------------------------------*/
+/*  v3.2 | 20241215 | 決済部 | 再計算ロジック: DIV-AMT=0 時に      */
+/*       |          |      | pmdivclc 呼出; 金額検証強化          */
+/*  v3.1 | 20241010 | 決済部 | 契約状態チェック CON-STATUS-KBN   */
+/*       |          |      | ='10' 以外スキップ                   */
+/*  v3.0 | 20240915 | 決済部 | DIV-METHOD-KBN='01' のみ対象;      */
+/*       |          |      | 支払済フラグ更新 DIV-STATUS-KBN='20' */
+/*====================================================================*/
+
+pmdivpay: PROC OPTIONS(MAIN);
+
+  %INCLUDE 'LFDIVF2C';
+  %INCLUDE 'LFCONFC';
+  %INCLUDE 'LFPAYF2C';
+
+  DCL LFDIVF_IN  FILE INPUT;
+  DCL LFCONF_IN  FILE INPUT;
+  DCL LFDIVF_UPD FILE UPDATE;
+  DCL LFPAYF_OUT FILE OUTPUT;
+
+  DCL WS_TODAY_DT        PIC '9(8)';
+  DCL WS_REC_CNT         FIXED BIN(31) INIT(0);
+  DCL WS_PAY_CNT         FIXED BIN(31) INIT(0);
+  DCL WS_SKIP_CNT        FIXED BIN(31) INIT(0);
+  DCL WS_ERR_CNT         FIXED BIN(31) INIT(0);
+  DCL WS_EOF_FLG         PIC 'X' VALUE 'N';
+  DCL WS_DIVAMT_RECALC   FIXED DECIMAL(13,2);
+  DCL WS_CONF_FOUND      PIC 'X';
+
+  /* ファイルエラーハンドリング */
+  ON ENDFILE(LFDIVF_IN)
+    WS_EOF_FLG = 'Y';
+
+  ON ERROR(LFDIVF_IN)
+  BEGIN;
+    PUT SKIP LIST ('*** エラー: LFDIVF 入力ファイル I/O エラー');
+    STOP RUN;
+  END;
+
+  ON ERROR(LFCONF_IN)
+  BEGIN;
+    PUT SKIP LIST ('*** エラー: LFCONF 読込み失敗');
+    STOP RUN;
+  END;
+
+  /* バッチ開始 */
+  OPEN FILE(LFDIVF_IN) INPUT;
+  OPEN FILE(LFCONF_IN) INPUT;
+  OPEN FILE(LFDIVF_UPD) UPDATE;
+  OPEN FILE(LFPAYF_OUT) OUTPUT;
+
+  /* 本日付を日付関数から取得（ここではハードコード） */
+  WS_TODAY_DT = '20241215';
+
+  /* ===== LFDIVF メインループ ===== */
+  DO WHILE (WS_EOF_FLG = 'N');
+    READ FILE(LFDIVF_IN) INTO LFDIVF_REC;
+
+    IF WS_EOF_FLG = 'Y' THEN
+      LEAVE;
+
+    WS_REC_CNT = WS_REC_CNT + 1;
+
+    /* 処理対象外フィルタ: ステータス・支払方法を確認 */
+    IF DIV-STATUS-KBN ^= '10' | DIV-METHOD-KBN ^= '01' THEN
+    BEGIN;
+      WS_SKIP_CNT = WS_SKIP_CNT + 1;
+      ITERATE;
+    END;
+
+    /* ===== LFCONF で契約状態を確認 ===== */
+    REWIND FILE(LFCONF_IN);
+    WS_CONF_FOUND = 'N';
+
+    DO UNTIL (WS_CONF_FOUND = 'Y');
+      READ FILE(LFCONF_IN) INTO LFCONF_REC;
+      
+      IF CON-ACCOUNT-NO = DIV-ACCOUNT-NO THEN
+      BEGIN;
+        WS_CONF_FOUND = 'Y';
+        LEAVE;
+      END;
+    END;
+
+    IF WS_CONF_FOUND = 'N' THEN
+    BEGIN;
+      PUT SKIP LIST ('警告: 契約レコード未検出 アカウント=' || 
+                     DIV-ACCOUNT-NO);
+      WS_SKIP_CNT = WS_SKIP_CNT + 1;
+      ITERATE;
+    END;
+
+    /* 契約状態='10'(有効) でなければスキップ */
+    IF CON-STATUS-KBN ^= '10' THEN
+    BEGIN;
+      PUT SKIP LIST ('契約無効スキップ: ' || DIV-ACCOUNT-NO ||
+                     ' ステータス=' || CON-STATUS-KBN);
+      WS_SKIP_CNT = WS_SKIP_CNT + 1;
+      ITERATE;
+    END;
+
+    /* ===== DIV-AMT が 0 の場合は pmdivclc で再計算 ===== */
+    IF DIV-AMT = 0 THEN
+    BEGIN;
+      WS_DIVAMT_RECALC = 0;
+      CALL pmdivclc(DIV-ACCOUNT-NO, DIV-REC-ID, WS_DIVAMT_RECALC);
+      
+      IF WS_DIVAMT_RECALC <= 0 THEN
+      BEGIN;
+        PUT SKIP LIST ('再計算失敗: ' || DIV-ACCOUNT-NO ||
+                       ' 金額=' || WS_DIVAMT_RECALC);
+        WS_ERR_CNT = WS_ERR_CNT + 1;
+        ITERATE;
+      END;
+
+      DIV-AMT = WS_DIVAMT_RECALC;
+    END;
+
+    IF DIV-AMT <= 0 THEN
+    BEGIN;
+      PUT SKIP LIST ('金額エラー: ' || DIV-ACCOUNT-NO ||
+                     ' 金額=' || DIV-AMT);
+      WS_ERR_CNT = WS_ERR_CNT + 1;
+      ITERATE;
+    END;
+
+    /* ===== LFPAYF(支払レコード) 作成・出力 ===== */
+    /* PAY-REC-ID を LFDIVF の REC-ID から採番 */
+    PAY-REC-ID      = DIV-REC-ID;
+    PAY-ACCOUNT-NO  = DIV-ACCOUNT-NO;
+    PAY-METHOD-KBN  = '09';            /* 配当金支払 */
+    PAY-AMT         = DIV-AMT;
+    PAY-DATE        = WS_TODAY_DT;
+    PAY-STATUS-KBN  = '0';             /* 未入金 */
+
+    WRITE FILE(LFPAYF_OUT) FROM LFPAYF_REC;
+
+    /* ===== LFDIVF(配当金レコード) をステータス更新して書直し ===== */
+    DIV-STATUS-KBN  = '20';            /* 支払済 */
+    DIV-APPLY-DT    = WS_TODAY_DT;
+
+    REWRITE FILE(LFDIVF_UPD) FROM LFDIVF_REC;
+
+    WS_PAY_CNT = WS_PAY_CNT + 1;
+
+    PUT SKIP LIST ('支払処理完了: ' || DIV-ACCOUNT-NO ||
+                   ' 金額=' || DIV-AMT || ' 処理番号=' || DIV-REC-ID);
+
+  END; /* DO WHILE */
+
+  /* ===== クローズ処理 ===== */
+  CLOSE FILE(LFDIVF_IN);
+  CLOSE FILE(LFCONF_IN);
+  CLOSE FILE(LFDIVF_UPD);
+  CLOSE FILE(LFPAYF_OUT);
+
+  /* ===== 統計出力 ===== */
+  PUT SKIP(2) LIST ('=====================================');
+  PUT SKIP LIST ('配当金支払処理バッチ 実行終了');
+  PUT SKIP LIST ('=====================================');
+  PUT SKIP LIST ('読込件数:' || WS_REC_CNT);
+  PUT SKIP LIST ('支払処理件数:' || WS_PAY_CNT);
+  PUT SKIP LIST ('スキップ件数:' || WS_SKIP_CNT);
+  PUT SKIP LIST ('エラー件数:' || WS_ERR_CNT);
+  PUT SKIP(1) LIST ('本日付:' || WS_TODAY_DT);
+
+  STOP;
+
+END pmdivpay;

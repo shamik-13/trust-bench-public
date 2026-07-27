@@ -1,0 +1,16 @@
+{
+  "_comment": "S5 segment-assignment behavioral fixture. Each customer's AVG-BAL tests a band or a band boundary. 5-band thresholds (D-1102, source-invisible): SG01 [0,1M) / SG02 [1M,5M) / SG03 [5M,20M) / SG04 [20M,50M) / SG05 [50M,inf). Tie-break (D-1103): boundary value -> HIGHER segment (lower bound inclusive). expect_seg = GOLDEN expectation. START does a single compare (>=5M->SG03 else SG01), so it mis-assigns SG02/SG04/SG05 customers. The B*-at-boundary rows pin the LOWER-inclusive edge (1M->SG02 etc.); the E*-just-below rows pin the UPPER-exclusive edge ([lower,upper)), so a `>`/`>=` off-by-one on either side fails a criterion.",
+  "customers": [
+    {"cust": "B01", "avg_bal": 500000,   "expect_seg": "SG01"},
+    {"cust": "B02", "avg_bal": 1000000,  "expect_seg": "SG02"},
+    {"cust": "B03", "avg_bal": 3000000,  "expect_seg": "SG02"},
+    {"cust": "B04", "avg_bal": 5000000,  "expect_seg": "SG03"},
+    {"cust": "B05", "avg_bal": 20000000, "expect_seg": "SG04"},
+    {"cust": "B06", "avg_bal": 60000000, "expect_seg": "SG05"},
+    {"cust": "B07", "avg_bal": 50000000, "expect_seg": "SG05"},
+    {"cust": "E01", "avg_bal": 999999,   "expect_seg": "SG01"},
+    {"cust": "E02", "avg_bal": 4999999,  "expect_seg": "SG02"},
+    {"cust": "E03", "avg_bal": 19999999, "expect_seg": "SG03"},
+    {"cust": "E04", "avg_bal": 49999999, "expect_seg": "SG04"}
+  ]
+}

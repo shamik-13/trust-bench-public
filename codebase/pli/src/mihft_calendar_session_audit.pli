@@ -1,0 +1,251 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数    年月日      担当        概要                            */
+/*    0.1     2018/04/02  運用一課    初版作成                        */
+/*    0.2     2019/10/15  渡辺 隆 (E-260)    監査出力文言を運用帳票へ合わせ  */
+/*    0.3     2021/06/30  篠原 健 (E-203)    休業日行の時刻欄確認を追加      */
+/*    0.4     2023/12/08  小林 直樹 (E-252)    終了時刻逆転時の明細出力を追加  */
+/*--------------------------------------------------------------------*/
+
+mihft_calendar_session_audit: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCCALFC;
+   %INCLUDE SCAUDTC;
+
+   DCL SCCALF_FILE FILE RECORD INPUT  ENV(SEQUENTIAL);
+   DCL SCAUDT_FILE FILE RECORD OUTPUT ENV(SEQUENTIAL);
+
+   DCL EOF_SW              CHAR(1) INIT('0');
+   DCL ERR_SW              CHAR(1) INIT('0');
+
+   DCL IN_CNT              FIXED DEC(9,0) INIT(0);
+   DCL AUD_CNT             FIXED DEC(9,0) INIT(0);
+   DCL ERR_CNT             FIXED DEC(9,0) INIT(0);
+
+   DCL WS_SESS_DT          PIC'99999999';
+   DCL WS_OPEN_TS          PIC'999999';
+   DCL WS_CLOSE_TS         PIC'999999';
+   DCL WS_HH               FIXED DEC(2,0);
+   DCL WS_MM               FIXED DEC(2,0);
+   DCL WS_SS               FIXED DEC(2,0);
+   DCL WS_OPEN_SEC         FIXED DEC(7,0);
+   DCL WS_CLOSE_SEC        FIXED DEC(7,0);
+
+   DCL WS_AUD_CD           CHAR(8);
+   DCL WS_AUD_MSG          CHAR(80);
+   DCL WS_BAD_ITEM         CHAR(16);
+   DCL WS_OP_TS            CHAR(14) INIT('');
+   DCL WS_PGM              CHAR(10) INIT('MIHFTCSA');
+
+   DCL VALID_ROW_SW        CHAR(1);
+   DCL TIME_ERR_SW         CHAR(1);
+
+   ON ENDFILE(SCCALF_FILE)
+      EOF_SW = '1';
+
+   ON ERROR
+      BEGIN;
+         ERR_SW = '1';
+         ERR_CNT = ERR_CNT + 1;
+      END;
+
+   OPEN FILE(SCCALF_FILE) INPUT;
+   OPEN FILE(SCAUDT_FILE) OUTPUT;
+
+   DO WHILE(EOF_SW = '0' & ERR_SW = '0');
+
+      READ FILE(SCCALF_FILE) INTO(SCCALF_REC);
+
+      IF EOF_SW = '0' THEN
+         DO;
+            IN_CNT = IN_CNT + 1;
+
+            VALID_ROW_SW = '1';
+            TIME_ERR_SW  = '0';
+            WS_AUD_CD    = '';
+            WS_AUD_MSG   = '';
+            WS_BAD_ITEM  = '';
+
+            WS_SESS_DT   = CA_SESS_DT;
+            WS_OP_TS     = CA_OPEN_TS;
+            WS_OPEN_TS   = SUBSTR(CA_OPEN_TS, 9, 6);
+            WS_CLOSE_TS  = SUBSTR(CA_CLOSE_TS, 9, 6);
+
+            /* カレンダー区分は B=営業日、H=休業日のみ許容する。 */
+            SELECT(CA_SESS_KBN);
+               WHEN('B')
+                  DO;
+                     IF ^VALID_YYYYMMDD(WS_SESS_DT) THEN
+                        DO;
+                           VALID_ROW_SW = '0';
+                           WS_AUD_CD    = 'CALDT001';
+                           WS_BAD_ITEM  = 'SESS-DT';
+                           WS_AUD_MSG   = 'セッション日付が暦日として不正';
+                        END;
+
+                     IF VALID_ROW_SW = '1' THEN
+                        IF ^VALID_HHMMSS(WS_OPEN_TS) THEN
+                           DO;
+                              VALID_ROW_SW = '0';
+                              WS_AUD_CD    = 'CALTM001';
+                              WS_BAD_ITEM  = 'OPEN-TS';
+                              WS_AUD_MSG   = '営業日の開始時刻が不正';
+                           END;
+
+                     IF VALID_ROW_SW = '1' THEN
+                        IF ^VALID_HHMMSS(WS_CLOSE_TS) THEN
+                           DO;
+                              VALID_ROW_SW = '0';
+                              WS_AUD_CD    = 'CALTM002';
+                              WS_BAD_ITEM  = 'CLOSE-TS';
+                              WS_AUD_MSG   = '営業日の終了時刻が不正';
+                           END;
+
+                     IF VALID_ROW_SW = '1' THEN
+                        DO;
+                           WS_OPEN_SEC  = TO_SEC(WS_OPEN_TS);
+                           WS_CLOSE_SEC = TO_SEC(WS_CLOSE_TS);
+
+                           IF WS_CLOSE_SEC <= WS_OPEN_SEC THEN
+                              DO;
+                                 TIME_ERR_SW = '1';
+                                 WS_AUD_CD   = 'CALTM003';
+                                 WS_BAD_ITEM = 'OPEN/CLOSE';
+                                 WS_AUD_MSG  = '終了時刻が開始時刻以前';
+                              END;
+                        END;
+                  END;
+
+               WHEN('H')
+                  DO;
+                     IF ^VALID_YYYYMMDD(WS_SESS_DT) THEN
+                        DO;
+                           VALID_ROW_SW = '0';
+                           WS_AUD_CD    = 'CALDT001';
+                           WS_BAD_ITEM  = 'SESS-DT';
+                           WS_AUD_MSG   = 'セッション日付が暦日として不正';
+                        END;
+
+                     IF VALID_ROW_SW = '1' THEN
+                        DO;
+                           IF WS_OPEN_TS ^= '000000' | WS_CLOSE_TS ^= '000000' THEN
+                              DO;
+                                 VALID_ROW_SW = '0';
+                                 WS_AUD_CD    = 'CALTM004';
+                                 WS_BAD_ITEM  = 'OPEN/CLOSE';
+                                 WS_AUD_MSG   = '休業日の時刻欄がゼロでない';
+                              END;
+                        END;
+                  END;
+
+               OTHERWISE
+                  DO;
+                     VALID_ROW_SW = '0';
+                     WS_AUD_CD    = 'CALKBN01';
+                     WS_BAD_ITEM  = 'SESS-KBN';
+                     WS_AUD_MSG   = 'セッション区分が不正';
+                  END;
+            END;
+
+            IF VALID_ROW_SW = '0' | TIME_ERR_SW = '1' THEN
+               DO;
+                  SET_AUDIT:
+                  DO;
+                     AU_PGM_ID        = WS_PGM;
+                     AU_EVENT_KBN     = 'CA';
+                     AU_AUDIT_ID      = WS_AUD_CD;
+                     AU_BUS_DT        = WS_SESS_DT;
+                     AU_BEFORE_STATUS = CA_SESS_KBN;
+                     AU_REF_ID        = WS_BAD_ITEM;
+                     AU_AFTER_STATUS  = 'P';
+                     AU_OP_TS         = WS_OP_TS;
+
+                     WRITE FILE(SCAUDT_FILE) FROM(SCAUDT_REC);
+                     AUD_CNT = AUD_CNT + 1;
+                  END;
+               END;
+         END;
+   END;
+
+   CLOSE FILE(SCCALF_FILE);
+   CLOSE FILE(SCAUDT_FILE);
+
+   VALID_YYYYMMDD: PROC(P_DATE) RETURNS(BIT(1));
+      DCL P_DATE       PIC'99999999';
+      DCL Y            FIXED DEC(4,0);
+      DCL M            FIXED DEC(2,0);
+      DCL D            FIXED DEC(2,0);
+      DCL LAST_D       FIXED DEC(2,0);
+
+      Y = SUBSTR(P_DATE,1,4);
+      M = SUBSTR(P_DATE,5,2);
+      D = SUBSTR(P_DATE,7,2);
+
+      IF Y < 1990 | Y > 2099 THEN
+         RETURN('0'B);
+
+      IF M < 1 | M > 12 THEN
+         RETURN('0'B);
+
+      SELECT(M);
+         WHEN(1,3,5,7,8,10,12) LAST_D = 31;
+         WHEN(4,6,9,11)        LAST_D = 30;
+         WHEN(2)
+            DO;
+               IF MOD(Y,400) = 0 THEN
+                  LAST_D = 29;
+               ELSE
+                  IF MOD(Y,100) = 0 THEN
+                     LAST_D = 28;
+                  ELSE
+                     IF MOD(Y,4) = 0 THEN
+                        LAST_D = 29;
+                     ELSE
+                        LAST_D = 28;
+            END;
+         OTHERWISE
+            RETURN('0'B);
+      END;
+
+      IF D < 1 | D > LAST_D THEN
+         RETURN('0'B);
+
+      RETURN('1'B);
+   END VALID_YYYYMMDD;
+
+   VALID_HHMMSS: PROC(P_TIME) RETURNS(BIT(1));
+      DCL P_TIME       PIC'999999';
+      DCL H            FIXED DEC(2,0);
+      DCL M            FIXED DEC(2,0);
+      DCL S            FIXED DEC(2,0);
+
+      H = SUBSTR(P_TIME,1,2);
+      M = SUBSTR(P_TIME,3,2);
+      S = SUBSTR(P_TIME,5,2);
+
+      IF H < 0 | H > 23 THEN
+         RETURN('0'B);
+
+      IF M < 0 | M > 59 THEN
+         RETURN('0'B);
+
+      IF S < 0 | S > 59 THEN
+         RETURN('0'B);
+
+      RETURN('1'B);
+   END VALID_HHMMSS;
+
+   TO_SEC: PROC(P_TIME) RETURNS(FIXED DEC(7,0));
+      DCL P_TIME       PIC'999999';
+      DCL H            FIXED DEC(2,0);
+      DCL M            FIXED DEC(2,0);
+      DCL S            FIXED DEC(2,0);
+
+      H = SUBSTR(P_TIME,1,2);
+      M = SUBSTR(P_TIME,3,2);
+      S = SUBSTR(P_TIME,5,2);
+
+      RETURN((H * 3600) + (M * 60) + S);
+   END TO_SEC;
+
+END mihft_calendar_session_audit;

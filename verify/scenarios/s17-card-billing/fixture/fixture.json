@@ -1,0 +1,21 @@
+{
+  "_comment": "Card cycle-billing behavioral fixture. Each billable card exercises the minimum-payment rule: GOLDEN = max(truncate(closing*0.05), 2000); START = truncate(closing*0.03), no floor. expect_min is the GOLDEN value, so GOLDEN passes all and START fails every billable case (and the floor cases differ twice over). C...05 (status 02 利用停止) is a non-billable control: skipped to status S with min 0 in BOTH arms. C...07 is the documented zero-balance edge (締後残高0円): a billable (status 01) card with closing=0, whose 最低支払額 must be 0 per the 規程 (the ¥2,000 floor does NOT apply) — GOLDEN=0, and a naive floor-to-¥2,000 fix would wrongly emit 2,000. Amounts are yen; gen_text scales x100 into the COMP-3 fields.",
+  "cards": [
+    {"card_no": "4501000000000001", "member": "M000000001", "status": "01", "limit": 500000, "cycle": "C15", "name": "ﾔﾏﾀﾞ ﾀﾛｳ",   "open_dt": "20180401"},
+    {"card_no": "4501000000000002", "member": "M000000002", "status": "01", "limit": 300000, "cycle": "C15", "name": "ｽｽﾞｷ ﾊﾅｺ",   "open_dt": "20190610"},
+    {"card_no": "4501000000000003", "member": "M000000003", "status": "01", "limit": 800000, "cycle": "C15", "name": "ﾀﾅｶ ｲﾁﾛｳ",   "open_dt": "20170215"},
+    {"card_no": "4501000000000004", "member": "M000000004", "status": "09", "limit": 200000, "cycle": "C15", "name": "ｻﾄｳ ｹﾝｲﾁ",   "open_dt": "20200905"},
+    {"card_no": "4501000000000005", "member": "M000000005", "status": "02", "limit": 400000, "cycle": "C15", "name": "ｲﾄｳ ﾐﾜ",     "open_dt": "20160320"},
+    {"card_no": "4501000000000006", "member": "M000000006", "status": "01", "limit": 600000, "cycle": "C15", "name": "ﾜﾀﾅﾍﾞ ﾀｶｼ", "open_dt": "20210118"},
+    {"card_no": "4501000000000007", "member": "M000000007", "status": "01", "limit": 250000, "cycle": "C15", "name": "ｺﾊﾞﾔｼ ﾏｺﾄ", "open_dt": "20220701"}
+  ],
+  "balances": [
+    {"card_no": "4501000000000001", "cycle_dt": "20260531", "closing": 100000, "revolving": 0,     "new_charge": 100000, "cash_adv": 0, "expect_status": "C", "expect_min": 5000},
+    {"card_no": "4501000000000002", "cycle_dt": "20260531", "closing": 10000,  "revolving": 0,     "new_charge": 10000,  "cash_adv": 0, "expect_status": "C", "expect_min": 2000},
+    {"card_no": "4501000000000003", "cycle_dt": "20260531", "closing": 50000,  "revolving": 30000, "new_charge": 20000,  "cash_adv": 0, "expect_status": "C", "expect_min": 2500},
+    {"card_no": "4501000000000004", "cycle_dt": "20260531", "closing": 30000,  "revolving": 30000, "new_charge": 0,      "cash_adv": 0, "expect_status": "C", "expect_min": 2000},
+    {"card_no": "4501000000000005", "cycle_dt": "20260531", "closing": 40000,  "revolving": 0,     "new_charge": 40000,  "cash_adv": 0, "expect_status": "S", "expect_min": 0},
+    {"card_no": "4501000000000006", "cycle_dt": "20260531", "closing": 80000,  "revolving": 0,     "new_charge": 80000,  "cash_adv": 0, "expect_status": "C", "expect_min": 4000},
+    {"card_no": "4501000000000007", "cycle_dt": "20260531", "closing": 0,      "revolving": 0,     "new_charge": 0,      "cash_adv": 0, "expect_status": "C", "expect_min": 0}
+  ]
+}

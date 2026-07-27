@@ -1,0 +1,8 @@
+       // CDOSFC -- CDOSF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdosf_rec qualified;
+         os_card_no         char(16);
+         os_fee_bal_amt     packed(13:2);
+         os_interest_bal_amt packed(13:2);
+         os_principal_bal_amt packed(13:2);
+         os_cycle_dt        packed(8:0);
+       end-ds;

@@ -1,0 +1,15 @@
+{
+  "_comment": "Capture fixture. Foreign-currency sales exercise the 海外事務手数料: GOLDEN fee=trunc(amt*0.022), START fee=trunc(amt*0.016). expect_* = GOLDEN. Domestic (JPY) sales -> fee 0 (control). Card 02 stopped -> skip S (control). amounts in yen; gen_text x100.",
+  "cards": [
+    {"card_no": "4501000000000001", "member": "M000000001", "status": "01", "limit": 500000, "name": "ﾔﾏﾀﾞ ﾀﾛｳ"},
+    {"card_no": "4501000000000002", "member": "M000000002", "status": "01", "limit": 300000, "name": "ｽｽﾞｷ ﾊﾅｺ"},
+    {"card_no": "4501000000000003", "member": "M000000003", "status": "02", "limit": 200000, "name": "ﾀﾅｶ ｲﾁﾛｳ"}
+  ],
+  "sales": [
+    {"sale_id": "SALE000001", "card_no": "4501000000000001", "amount": 100000, "currency": "USD", "merchant": "M001", "sale_dt": "20260610", "auth_id": "A000000001", "expect_status": "C", "expect_billed": 102200, "expect_fee": 2200},
+    {"sale_id": "SALE000002", "card_no": "4501000000000001", "amount": 50000,  "currency": "JPY", "merchant": "M002", "sale_dt": "20260610", "auth_id": "A000000002", "expect_status": "C", "expect_billed": 50000,  "expect_fee": 0},
+    {"sale_id": "SALE000003", "card_no": "4501000000000002", "amount": 200000, "currency": "EUR", "merchant": "M003", "sale_dt": "20260610", "auth_id": "A000000003", "expect_status": "C", "expect_billed": 204400, "expect_fee": 4400},
+    {"sale_id": "SALE000004", "card_no": "4501000000000003", "amount": 30000,  "currency": "JPY", "merchant": "M004", "sale_dt": "20260610", "auth_id": "A000000004", "expect_status": "S", "expect_billed": 0, "expect_fee": 0},
+    {"sale_id": "SALE000005", "card_no": "4501000000000002", "amount": 80000,  "currency": "USD", "merchant": "M005", "sale_dt": "20260610", "auth_id": "A000000005", "expect_status": "C", "expect_billed": 81760,  "expect_fee": 1760}
+  ]
+}

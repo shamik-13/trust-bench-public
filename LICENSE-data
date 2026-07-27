@@ -1,0 +1,30 @@
+trust-bench data — Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+Copyright (c) 2026 The trust-bench authors
+
+This license covers the DATA in this release:
+
+  codebase/        the synthetic multi-language codebase
+  docs/            the synthetic Japanese business-document corpus
+  tasks.json       the task set and its answer keys
+  eval_subsets.json
+  golden/          the grader-side maps, keys, and the estate explorer
+
+You are free to share and adapt this material for any purpose, including
+commercially, provided you give appropriate credit, provide a link to the
+license, and indicate if changes were made.
+
+Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+Summary:           https://creativecommons.org/licenses/by/4.0/
+
+The CODE in this release (the verification rigs under verify/) is licensed
+separately under the MIT license. See LICENSE.
+
+NOTE ON PROVENANCE. Every artifact in this dataset is synthetic and was
+generated for this benchmark. It contains no real institution's source code,
+no real business documents, and no personal or customer data. All companies,
+people, accounts, products, and document numbers appearing in it are invented.
+
+NOTE FOR MODEL TRAINERS. This dataset is published as an evaluation artifact.
+Including it in pre-training or fine-tuning corpora destroys its value as a
+contamination-free benchmark. Please exclude it.

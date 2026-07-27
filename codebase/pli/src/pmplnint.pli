@@ -1,0 +1,187 @@
+ /******************************************************************************/
+ /*  PMPLNINT - 貸付利息計算バッチ                                            */
+ /*  loan interest accrual batch for month-end close                          */
+ /******************************************************************************/
+ /*  変更履歴                                                                  */
+ /*  版数  年月日      担当           概要                                     */
+ /*  1.0   2024-01-15  金融系G-増田   新規作成 - 貸付利息月次計算処理          */
+ /*  1.1   2024-02-28  金融系G-小山   強制返済警告状態判定追加                 */
+ /*  1.2   2024-06-10  金融系G-木村   経過日数計算アルゴリズム修正             */
+ /******************************************************************************/
+
+ PMPLNINT: PROC OPTIONS(MAIN);
+
+   %INCLUDE 'LFPLNFC';  /* 貸付原簿レコード定義                            */
+
+   DCL 1 WK_DATE_INFO,
+         2 RUN_DT           PIC '9(8)',
+         2 YY_RUN           PIC '9(4)',
+         2 MM_RUN           PIC '9(2)',
+         2 DD_RUN           PIC '9(2)',
+         2 LAST_INT_DT      PIC '9(8)',
+         2 YY_LAST          PIC '9(4)',
+         2 MM_LAST          PIC '9(2)',
+         2 DD_LAST          PIC '9(2)',
+         2 ELAP_DAYS        FIXED DEC(5),
+         2 TEMP_YY          FIXED DEC(4),
+         2 TEMP_MM          FIXED DEC(2),
+         2 TEMP_DD          FIXED DEC(2),
+         2 DAYS_IN_MONTH    FIXED DEC(2);
+
+   DCL 1 WK_CALC_INFO,
+         2 INT_RATE_DECIMAL FIXED DEC(7,6),
+         2 ACCRUED_INT      FIXED DEC(13,4),
+         2 INT_THRESHOLD    FIXED DEC(13,4),
+         2 PRINCIPAL_AMT    FIXED DEC(13,2),
+         2 TOTAL_INT_AMT    FIXED DEC(13,4),
+         2 DIV_RESULT       FIXED DEC(15,6);
+
+   DCL 1 WK_COUNTER,
+         2 REC_IN_COUNT     FIXED DEC(9),
+         2 REC_OUT_COUNT    FIXED DEC(9),
+         2 REC_ERR_COUNT    FIXED DEC(9),
+         2 REC_PROCESS      FIXED DEC(9);
+
+   DCL INPUT_FILE      FILE RECORD SEQUENTIAL INPUT UNBUFFERED;
+   DCL OUTPUT_FILE     FILE RECORD SEQUENTIAL OUTPUT UNBUFFERED;
+   DCL ERR_FILE        FILE RECORD SEQUENTIAL OUTPUT UNBUFFERED;
+
+   DCL RETURN_CODE     FIXED DEC(4) INIT(0);
+   DCL EOF_FLG         CHAR(1) INIT('N');
+   DCL REC_IN          CHAR(2048);
+   DCL REC_OUT         CHAR(2048);
+   DCL ERR_REC         CHAR(256);
+   DCL STATUS_KBN      CHAR(2);
+   DCL PME_ID          CHAR(12);
+   DCL SYORI_DT        CHAR(8);
+   DCL REASON_CODE     CHAR(4);
+
+   ON ENDFILE(INPUT_FILE)
+      EOF_FLG = 'Y';
+
+   ON ERROR
+      BEGIN;
+         RETURN_CODE = 99;
+         ERR_REC = 'システムエラー: ' || ONCODE || ' ファイル:' || ONSOURCE;
+         WRITE FILE(ERR_FILE) FROM ERR_REC;
+         SIGNAL ERROR;
+      END;
+
+   /* 初期化処理 */
+   REC_IN_COUNT = 0;
+   REC_OUT_COUNT = 0;
+   REC_ERR_COUNT = 0;
+   REC_PROCESS = 0;
+   EOF_FLG = 'N';
+   STATUS_KBN = '';
+   PME_ID = '';
+   REASON_CODE = '';
+
+   /* 実行日付取得 - 20260629形式 */
+   RUN_DT = 20260629;
+   YY_RUN = 2026;
+   MM_RUN = 06;
+   DD_RUN = 29;
+
+   /* ファイルOPEN */
+   OPEN FILE(INPUT_FILE) TITLE('DD:LFPLNFIN');
+   OPEN FILE(OUTPUT_FILE) TITLE('DD:LFPLNFOUT');
+   OPEN FILE(ERR_FILE) TITLE('DD:LFPLNFERR');
+
+   /* メイン処理ループ */
+   DO WHILE(EOF_FLG = 'N');
+      READ FILE(INPUT_FILE) INTO REC_IN;
+      
+      IF EOF_FLG = 'Y' THEN LEAVE;
+
+      REC_IN_COUNT = REC_IN_COUNT + 1;
+
+      /* レコードのバイナリマップ処理 */
+      /* 実際運用ではLFPLNFコピー本で定義済みと想定 */
+      UNSPEC(LFPLNF) = UNSPEC(REC_IN);
+
+      /* 処理対象判定: STATUS_KBN = '01' (返済中) のみ */
+      IF PLN_STATUS_KBN ^= '01' THEN
+         DO;
+            WRITE FILE(OUTPUT_FILE) FROM REC_IN;
+            ITERATE;
+         END;
+
+      REC_PROCESS = REC_PROCESS + 1;
+      PME_ID = PLN_PKEY_ID;
+
+      /* 経過日数計算 */
+      LAST_INT_DT = PLN_LAST_INT_DT;
+      YY_LAST = SUBSTR(LAST_INT_DT, 1, 4);
+      MM_LAST = SUBSTR(LAST_INT_DT, 5, 2);
+      DD_LAST = SUBSTR(LAST_INT_DT, 7, 2);
+
+      /* 簡易経過日数計算: 月数単位 + 日数差分 */
+      /* 年を跨ぐ場合の調整 */
+      IF YY_RUN > YY_LAST THEN
+         ELAP_DAYS = (YY_RUN - YY_LAST) * 365;
+      ELSE
+         ELAP_DAYS = 0;
+
+      /* 月数調整 - 365日ベース */
+      ELAP_DAYS = ELAP_DAYS + ((MM_RUN - MM_LAST) * 31);
+      ELAP_DAYS = ELAP_DAYS + (DD_RUN - DD_LAST);
+
+      /* 年間日数補正: 閏年考慮なし (簡易計算) */
+      IF ELAP_DAYS < 0 THEN
+         ELAP_DAYS = ELAP_DAYS + 365;
+
+      /* 0日の場合はスキップ (当日の場合) */
+      IF ELAP_DAYS <= 0 THEN
+         DO;
+            WRITE FILE(OUTPUT_FILE) FROM REC_IN;
+            ITERATE;
+         END;
+
+      /* 利息計算 */
+      PRINCIPAL_AMT = PLN_PRINCIPAL_AMT;
+      INT_RATE_DECIMAL = PLN_INT_RATE / 10000;  /* 単位変換 */
+      TOTAL_INT_AMT = PLN_TOTAL_INT_AMT;
+
+      /* 日次利息 = 元金 × 利率 / 365 × 経過日数 */
+      DIV_RESULT = (PRINCIPAL_AMT * INT_RATE_DECIMAL) / 365;
+      ACCRUED_INT = DIV_RESULT * ELAP_DAYS;
+
+      /* 合計利息に加算 */
+      TOTAL_INT_AMT = TOTAL_INT_AMT + ACCRUED_INT;
+
+      /* 強制返済警告判定: 利息が元金の20%超 */
+      INT_THRESHOLD = PRINCIPAL_AMT * 0.20;
+
+      STATUS_KBN = PLN_STATUS_KBN;
+      IF TOTAL_INT_AMT > INT_THRESHOLD THEN
+         STATUS_KBN = '02';  /* 強制返済警告状態へ */
+
+      /* 更新値の反映 */
+      PLN_TOTAL_INT_AMT = TOTAL_INT_AMT;
+      PLN_LAST_INT_DT = RUN_DT;
+      PLN_STATUS_KBN = STATUS_KBN;
+
+      /* 出力レコード作成 */
+      UNSPEC(REC_OUT) = UNSPEC(LFPLNF);
+      WRITE FILE(OUTPUT_FILE) FROM REC_OUT;
+
+      REC_OUT_COUNT = REC_OUT_COUNT + 1;
+
+   END;  /* メインループ終了 */
+
+   /* ファイルCLOSE */
+   CLOSE FILE(INPUT_FILE);
+   CLOSE FILE(OUTPUT_FILE);
+   CLOSE FILE(ERR_FILE);
+
+   /* 終了メッセージ出力 */
+   IF REC_ERR_COUNT > 0 THEN
+      RETURN_CODE = 4;
+
+   CALL PRTCLS(RUN_DT, REC_IN_COUNT, REC_OUT_COUNT, 
+               REC_ERR_COUNT, REC_PROCESS, RETURN_CODE);
+
+   STOP RUN;
+
+ END PMPLNINT;

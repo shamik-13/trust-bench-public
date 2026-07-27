@@ -1,0 +1,10 @@
+       // CDCBKPC -- CDCBKPF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdcbkpf_rec qualified;
+         cbk_chargeback_id  char(10);
+         cbk_sale_id        char(10);
+         cbk_card_no        char(16);
+         cbk_merchant_code  char(4);
+         cbk_claim_amt      packed(13:2);
+         cbk_claim_reason   char(4);
+         cbk_case_status    char(2);
+       end-ds;

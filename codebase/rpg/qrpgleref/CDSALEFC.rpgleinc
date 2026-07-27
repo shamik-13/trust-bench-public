@@ -1,0 +1,10 @@
+       // CDSALEFC -- CDSALEF レコードレイアウト (record layout). Shared/pinned.
+       dcl-ds cdsalef_rec qualified;
+         sl_sale_id         char(10);
+         sl_card_no         char(16);
+         sl_sale_amt        packed(13:2);
+         sl_currency_cd     char(10);
+         sl_merchant_code   char(4);
+         sl_sale_dt         packed(8:0);
+         sl_auth_id         char(10);
+       end-ds;

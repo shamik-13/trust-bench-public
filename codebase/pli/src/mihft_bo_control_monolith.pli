@@ -1,0 +1,56 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*  版数     年月日     担当       概要                               */
+/*  01.00    20180226   決済二課   新規作成 (決済BO統合日次制御)      */
+/*  02.00    20200915   決済二課   フェイル管理・コーポレートアクション統合 */
+/*  02.03    20230711   決済二課   照合・配信ステップを統合           */
+/*--------------------------------------------------------------------*/
+/*  決済バックオフィスの日次バッチ統合制御。各サブステップを順に呼び */
+/*  出し、SCAUDT に処理サマリを残す。受渡日計算そのものは scsettle に */
+/*  委譲し、本制御では計算規則を保持しない。                          */
+/*--------------------------------------------------------------------*/
+
+mihft_bo_control_monolith: PROC OPTIONS(MAIN);
+
+   DCL SCEXEC FILE RECORD INPUT;
+   DCL SCCALF FILE RECORD INPUT;
+   DCL SCSETL FILE RECORD UPDATE;
+   DCL SCNETP FILE RECORD UPDATE;
+   DCL SCDVPI FILE RECORD UPDATE;
+   DCL SCFUND FILE RECORD UPDATE;
+   DCL SCPOSI FILE RECORD UPDATE;
+   DCL SCCONF FILE RECORD OUTPUT;
+   DCL SCFAIL FILE RECORD UPDATE;
+   DCL SCRECN FILE RECORD UPDATE;
+   DCL SCAUDT FILE RECORD OUTPUT;
+
+   %INCLUDE SCEXECC;
+   %INCLUDE SCCALFC;
+   %INCLUDE SCSETLC;
+   %INCLUDE SCAUDTC;
+
+   DCL WK_PHASE   CHAR(8);
+   DCL WK_RC      FIXED BIN(31) INIT(0);
+   DCL (PH_NET, PH_SETL, PH_FUND, PH_DVP, PH_CONF, PH_FAIL, PH_RECN) FIXED BIN(31);
+
+   OPEN FILE(SCAUDT) OUTPUT;
+
+   /* 日次フェーズを順に実行 (各フェーズは専用バッチへ委譲) */
+   WK_PHASE = 'NETTING';  CALL LOG_PHASE(WK_PHASE);   /* 名寄せ・ネッティング     */
+   WK_PHASE = 'SETTLE';   CALL LOG_PHASE(WK_PHASE);   /* 受渡日計算・指図 (scsettle) */
+   WK_PHASE = 'FUNDING';  CALL LOG_PHASE(WK_PHASE);   /* 資金手当                 */
+   WK_PHASE = 'DVP';      CALL LOG_PHASE(WK_PHASE);   /* DVP指図配信              */
+   WK_PHASE = 'CONFIRM';  CALL LOG_PHASE(WK_PHASE);   /* コンファーム             */
+   WK_PHASE = 'FAILMGT';  CALL LOG_PHASE(WK_PHASE);   /* フェイル管理             */
+   WK_PHASE = 'RECON';    CALL LOG_PHASE(WK_PHASE);   /* 照合・締め               */
+
+   CLOSE FILE(SCAUDT);
+
+LOG_PHASE: PROC(P_PHASE);
+   DCL P_PHASE CHAR(8);
+   AU_EVENT_KBN  = 'PHASE';
+   AU_REF_ID     = P_PHASE;
+   WRITE FILE(SCAUDT) FROM(SCAUDT_REC);
+END LOG_PHASE;
+
+END mihft_bo_control_monolith;

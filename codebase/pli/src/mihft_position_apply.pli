@@ -1,0 +1,318 @@
+/*--------------------------------------------------------------------*/
+/*  変更履歴                                                          */
+/*    版数   年月日     担当     概要                                */
+/*    0.1    2018/04/02 決済一課  初版作成                            */
+/*    0.2    2019/10/15 篠原 健 (E-203)  監査出力項目追加                    */
+/*    0.3    2021/06/01 決済一課  DVP完了分の残高反映条件を追加        */
+/*    0.4    2023/11/20 中川 美和 (E-283)  受渡日カレンダ整合判定を追加          */
+/*--------------------------------------------------------------------*/
+
+mihft_position_apply: PROC OPTIONS(MAIN);
+
+   %INCLUDE SCSETLC;
+   %INCLUDE SCDVPIC;
+   %INCLUDE SCPOSIC;
+   %INCLUDE SCAUDTC;
+
+   DCL SCCALF   FILE RECORD INPUT  ENV(FB RECSIZE(080));
+   DCL SCDVPF   FILE RECORD INPUT  ENV(FB RECSIZE(320));
+   DCL SCPOSF   FILE RECORD UPDATE ENV(FB RECSIZE(240));
+   DCL SCSETOF  FILE RECORD OUTPUT ENV(FB RECSIZE(320));
+   DCL SCAUDF   FILE RECORD OUTPUT ENV(FB RECSIZE(256));
+   DCL SYSPRINT FILE STREAM OUTPUT;
+
+   DCL 1 CAL_REC,
+         3 CAL_DATE             FIXED DEC(8,0),
+         3 CAL_SESS_KBN         CHAR(1),
+         3 CAL_FILLER           CHAR(71);
+
+   DCL 1 POS_OLD LIKE SCPOSI_REC;
+
+   DCL EOF_DVP                  BIT(1) INIT('0'B);
+   DCL EOF_POS                  BIT(1) INIT('0'B);
+   DCL EOF_CAL                  BIT(1) INIT('0'B);
+   DCL FOUND_POS                BIT(1) INIT('0'B);
+   DCL FOUND_CAL                BIT(1) INIT('0'B);
+   DCL ERR_SW                   BIT(1) INIT('0'B);
+
+   DCL SYS_DATE                 FIXED DEC(8,0);
+   DCL SYS_TIME                 CHAR(6);
+   DCL WK_KEY_CIF               CHAR(16);
+   DCL WK_KEY_INSTR             CHAR(4);
+   DCL WK_MSG                   CHAR(80);
+   DCL WK_APPLY_KBN             CHAR(1);
+   DCL WK_AUDIT_SEQ             FIXED DEC(9,0) INIT(0);
+   DCL WK_SETL_SEQ              FIXED DEC(9,0) INIT(0);
+   DCL WK_SEQ_C                 PIC'(10)9';
+
+   DCL READ_DVP_CNT             FIXED DEC(9,0) INIT(0);
+   DCL READ_POS_CNT             FIXED DEC(9,0) INIT(0);
+   DCL UPD_POS_CNT              FIXED DEC(9,0) INIT(0);
+   DCL WRT_AUD_CNT              FIXED DEC(9,0) INIT(0);
+   DCL WRT_ERR_CNT              FIXED DEC(9,0) INIT(0);
+   DCL SKIP_CNT                 FIXED DEC(9,0) INIT(0);
+
+   DCL WK_SETTLED_QTY           FIXED DEC(15,3) INIT(0);
+   DCL WK_OLD_SETTLED_QTY       FIXED DEC(15,3) INIT(0);
+   DCL WK_OLD_PENDING_IN_QTY    FIXED DEC(15,3) INIT(0);
+   DCL WK_OLD_PENDING_OUT_QTY   FIXED DEC(15,3) INIT(0);
+   DCL WK_NEW_SETTLED_QTY       FIXED DEC(15,3) INIT(0);
+   DCL WK_NEW_PENDING_IN_QTY    FIXED DEC(15,3) INIT(0);
+   DCL WK_NEW_PENDING_OUT_QTY   FIXED DEC(15,3) INIT(0);
+   DCL WK_AMT                   FIXED DEC(17,2) INIT(0);
+
+   DCL DATE                     BUILTIN;
+   DCL TIME                     BUILTIN;
+   DCL SUBSTR                   BUILTIN;
+   DCL DECIMAL                  BUILTIN;
+   DCL MOD                      BUILTIN;
+
+   ON ENDFILE(SCDVPF) EOF_DVP = '1'B;
+   ON ENDFILE(SCPOSF) EOF_POS = '1'B;
+   ON ENDFILE(SCCALF) EOF_CAL = '1'B;
+
+   ON ERROR BEGIN;
+      ERR_SW = '1'B;
+      PUT FILE(SYSPRINT) SKIP LIST('MIHFT POSITION APPLY 異常終了');
+      CALL WRITE_AUDIT('E', 'PL/I ERROR 発生');
+      CLOSE FILE(SCDVPF), FILE(SCPOSF), FILE(SCCALF),
+            FILE(SCSETOF), FILE(SCAUDF);
+      STOP;
+   END;
+
+   SYS_DATE = DECIMAL(DATE(), 8, 0);
+   SYS_TIME = SUBSTR(TIME(), 1, 6);
+
+   OPEN FILE(SCCALF)  INPUT;
+   OPEN FILE(SCDVPF)  INPUT;
+   OPEN FILE(SCPOSF)  UPDATE;
+   OPEN FILE(SCSETOF) OUTPUT;
+   OPEN FILE(SCAUDF)  OUTPUT;
+
+   CALL WRITE_AUDIT('I', '決済済残高反映 開始');
+
+   READ FILE(SCDVPF) INTO(SCDVPI_REC);
+
+   DO WHILE(^EOF_DVP);
+
+      READ_DVP_CNT = READ_DVP_CNT + 1;
+      ERR_SW = '0'B;
+      WK_APPLY_KBN = ' ';
+
+      IF DV_ROUTE_KBN ^= 'DV' THEN
+         DO;
+            SKIP_CNT = SKIP_CNT + 1;
+            CALL WRITE_AUDIT('S', 'DVP以外のため対象外');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      IF DV_MATCH_STATUS ^= 'C' THEN
+         DO;
+            SKIP_CNT = SKIP_CNT + 1;
+            CALL WRITE_AUDIT('S', '照合未完了のため対象外');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      IF DV_SETL_ID = ' ' THEN
+         DO;
+            WRT_ERR_CNT = WRT_ERR_CNT + 1;
+            CALL WRITE_AUDIT('E', 'SETL-ID未設定');
+            CALL WRITE_SETL_ERROR('F1', 'SETL-ID未設定');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      CALL FIND_CALENDAR(DV_SETL_DT);
+
+      IF ^FOUND_CAL THEN
+         DO;
+            WRT_ERR_CNT = WRT_ERR_CNT + 1;
+            CALL WRITE_AUDIT('E', '受渡日カレンダ未登録');
+            CALL WRITE_SETL_ERROR('F2', '受渡日カレンダ未登録');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      IF CAL_SESS_KBN ^= 'B' THEN
+         DO;
+            WRT_ERR_CNT = WRT_ERR_CNT + 1;
+            CALL WRITE_AUDIT('E', '受渡日が非営業日');
+            CALL WRITE_SETL_ERROR('F3', '受渡日が非営業日');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      SELECT(DV_ROUTE_KBN);
+         WHEN('DV') WK_APPLY_KBN = 'R';
+         OTHERWISE DO;
+            WRT_ERR_CNT = WRT_ERR_CNT + 1;
+            CALL WRITE_AUDIT('E', '経路区分不正');
+            CALL WRITE_SETL_ERROR('F4', '経路区分不正');
+            GO TO READ_NEXT_DVP;
+         END;
+      END;
+
+      WK_KEY_CIF   = DV_CIF_NO;
+      WK_KEY_INSTR = DV_INSTR_CODE;
+
+      CALL FIND_POSITION(WK_KEY_CIF, WK_KEY_INSTR);
+
+      IF ^FOUND_POS THEN
+         DO;
+            WRT_ERR_CNT = WRT_ERR_CNT + 1;
+            CALL WRITE_AUDIT('E', '残高マスタ未登録');
+            CALL WRITE_SETL_ERROR('F5', '残高マスタ未登録');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      POS_OLD = SCPOSI_REC;
+
+      WK_SETTLED_QTY         = DV_DELIVER_QTY;
+      WK_OLD_SETTLED_QTY     = PS_SETTLED_QTY;
+      WK_OLD_PENDING_IN_QTY  = PS_PENDING_IN_QTY;
+      WK_OLD_PENDING_OUT_QTY = PS_PENDING_OUT_QTY;
+      WK_AMT                 = DV_PAY_AMT;
+
+      IF WK_SETTLED_QTY <= 0 THEN
+         DO;
+            WRT_ERR_CNT = WRT_ERR_CNT + 1;
+            CALL WRITE_AUDIT('E', '決済数量不正');
+            CALL WRITE_SETL_ERROR('F6', '決済数量不正');
+            GO TO READ_NEXT_DVP;
+         END;
+
+      IF WK_OLD_PENDING_OUT_QTY >= WK_SETTLED_QTY THEN
+         DO;
+            WK_NEW_PENDING_OUT_QTY = WK_OLD_PENDING_OUT_QTY
+                                     - WK_SETTLED_QTY;
+            WK_NEW_PENDING_IN_QTY  = WK_OLD_PENDING_IN_QTY;
+            WK_NEW_SETTLED_QTY     = WK_OLD_SETTLED_QTY;
+         END;
+      ELSE
+         DO;
+            IF WK_OLD_PENDING_IN_QTY < WK_SETTLED_QTY THEN
+               DO;
+                  WRT_ERR_CNT = WRT_ERR_CNT + 1;
+                  CALL WRITE_AUDIT('E', '反映予定残不足');
+                  CALL WRITE_SETL_ERROR('F7', '反映予定残不足');
+                  GO TO READ_NEXT_DVP;
+               END;
+
+            WK_NEW_PENDING_OUT_QTY = WK_OLD_PENDING_OUT_QTY;
+            WK_NEW_PENDING_IN_QTY  = WK_OLD_PENDING_IN_QTY
+                                     - WK_SETTLED_QTY;
+            WK_NEW_SETTLED_QTY     = WK_OLD_SETTLED_QTY
+                                     + WK_SETTLED_QTY;
+         END;
+
+      PS_SETTLED_QTY      = WK_NEW_SETTLED_QTY;
+      PS_PENDING_IN_QTY   = WK_NEW_PENDING_IN_QTY;
+      PS_PENDING_OUT_QTY  = WK_NEW_PENDING_OUT_QTY;
+      PS_BASE_DT          = DV_SETL_DT;
+      PS_STATUS_KBN       = '1';
+
+      REWRITE FILE(SCPOSF) FROM(SCPOSI_REC);
+      UPD_POS_CNT = UPD_POS_CNT + 1;
+
+      CALL WRITE_AUDIT('U', '残高反映完了');
+
+READ_NEXT_DVP:
+      READ FILE(SCDVPF) INTO(SCDVPI_REC);
+
+   END;
+
+   CALL WRITE_AUDIT('I', '決済済残高反映 終了');
+
+   PUT FILE(SYSPRINT) SKIP LIST('MIHFT_POSITION_APPLY');
+   PUT FILE(SYSPRINT) SKIP LIST('DVP READ        ', READ_DVP_CNT);
+   PUT FILE(SYSPRINT) SKIP LIST('POS READ        ', READ_POS_CNT);
+   PUT FILE(SYSPRINT) SKIP LIST('POS UPDATE      ', UPD_POS_CNT);
+   PUT FILE(SYSPRINT) SKIP LIST('AUDIT WRITE     ', WRT_AUD_CNT);
+   PUT FILE(SYSPRINT) SKIP LIST('ERROR WRITE     ', WRT_ERR_CNT);
+   PUT FILE(SYSPRINT) SKIP LIST('SKIP            ', SKIP_CNT);
+
+   CLOSE FILE(SCDVPF), FILE(SCPOSF), FILE(SCCALF),
+         FILE(SCSETOF), FILE(SCAUDF);
+
+   RETURN;
+
+FIND_CALENDAR: PROC(P_DATE);
+   DCL P_DATE FIXED DEC(8,0);
+
+   FOUND_CAL = '0'B;
+   EOF_CAL = '0'B;
+
+   CLOSE FILE(SCCALF);
+   OPEN FILE(SCCALF) INPUT;
+
+   READ FILE(SCCALF) INTO(CAL_REC);
+
+   DO WHILE(^EOF_CAL & ^FOUND_CAL);
+      IF CAL_DATE = P_DATE THEN
+         FOUND_CAL = '1'B;
+      ELSE
+         READ FILE(SCCALF) INTO(CAL_REC);
+   END;
+END FIND_CALENDAR;
+
+FIND_POSITION: PROC(P_CIF, P_INSTR);
+   DCL P_CIF   CHAR(16);
+   DCL P_INSTR CHAR(4);
+
+   FOUND_POS = '0'B;
+   EOF_POS = '0'B;
+
+   CLOSE FILE(SCPOSF);
+   OPEN FILE(SCPOSF) UPDATE;
+
+   READ FILE(SCPOSF) INTO(SCPOSI_REC);
+
+   DO WHILE(^EOF_POS & ^FOUND_POS);
+      READ_POS_CNT = READ_POS_CNT + 1;
+
+      IF PS_CIF_NO    = P_CIF &
+         PS_INSTR_CODE = P_INSTR THEN
+         FOUND_POS = '1'B;
+      ELSE
+         READ FILE(SCPOSF) INTO(SCPOSI_REC);
+   END;
+END FIND_POSITION;
+
+WRITE_AUDIT: PROC(P_KBN, P_TEXT);
+   DCL P_KBN  CHAR(1);
+   DCL P_TEXT CHAR(80);
+
+   SCAUDT_REC = '';
+   WK_AUDIT_SEQ = WK_AUDIT_SEQ + 1;
+   WK_SEQ_C = WK_AUDIT_SEQ;
+   AU_AUDIT_ID      = 'AU' || SUBSTR(WK_SEQ_C, 3, 8);
+   AU_PGM_ID        = 'MIHFTPOS';
+   AU_BUS_DT        = DV_SETL_DT;
+   AU_REF_ID        = DV_SETL_ID;
+   AU_EVENT_KBN     = P_KBN;
+   AU_BEFORE_STATUS = PS_STATUS_KBN;
+   AU_AFTER_STATUS  = DV_MATCH_STATUS;
+   AU_OP_TS         = SYS_DATE || SYS_TIME;
+
+   WRITE FILE(SCAUDF) FROM(SCAUDT_REC);
+   WRT_AUD_CNT = WRT_AUD_CNT + 1;
+END WRITE_AUDIT;
+
+WRITE_SETL_ERROR: PROC(P_KBN, P_TEXT);
+   DCL P_KBN  CHAR(2);
+   DCL P_TEXT CHAR(80);
+
+   SCSETL_REC = '';
+   WK_SETL_SEQ = WK_SETL_SEQ + 1;
+   WK_SEQ_C = WK_SETL_SEQ;
+   ST_SETL_ID    = DV_SETL_ID;
+   ST_EXEC_ID    = DV_DVP_ID;
+   ST_CIF_NO     = DV_CIF_NO;
+   ST_INSTR_CODE = DV_INSTR_CODE;
+   ST_TRADE_DT   = DV_SETL_DT;
+   ST_SETL_DT    = DV_SETL_DT;
+   ST_SETL_AMT   = DV_PAY_AMT;
+   ST_SETL_KBN   = P_KBN;
+   ST_STATUS_KBN = 'F';
+
+   WRITE FILE(SCSETOF) FROM(SCSETL_REC);
+END WRITE_SETL_ERROR;
+
+END mihft_position_apply;

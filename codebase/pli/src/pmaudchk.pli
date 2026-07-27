@@ -1,0 +1,191 @@
+/*================================================================*/
+/*                        PMAUDCHK                               */
+/*                    監査整合性チェックバッチ                      */
+/*                                                               */
+/* 変更履歴                                                       */
+/* 版数  年月日    担当        概要                               */
+/*─────────────────────────────────────────────────────────────*/
+/* 1.0   2025-04  S.YAMADA   初版作成                           */
+/* 1.1   2025-06  M.TANAKA   エラーハンドリング強化              */
+/*================================================================*/
+
+PMAUDCHK: PROC OPTIONS(MAIN);
+
+   /* ===== ファイル宣言 ===== */
+   DCL LFAUDL_FILE FILE SEQUENTIAL INPUT RECORD;
+   DCL LFCONF_FILE FILE SEQUENTIAL INPUT RECORD;
+   DCL LFAUDL_OUT_FILE FILE SEQUENTIAL OUTPUT RECORD;
+
+   /* ===== 監査ログレコード (LFAUDLC からインクルード) ===== */
+   %INCLUDE LFAUDLC;
+   
+   /* ===== 契約マスタレコード (LFCONFC からインクルード) ===== */
+   %INCLUDE LFCONFC;
+   
+   /* ===== 入力パラメータ ===== */
+   DCL STRT_DATE        PIC '9(8)';        /* 開始日付 YYYYMMDD */
+   DCL END_DATE         PIC '9(8)';        /* 終了日付 YYYYMMDD */
+   DCL PROC_DATE        PIC '9(8)';        /* 処理日付 YYYYMMDD */
+   
+   /* ===== 処理統計 ===== */
+   DCL REC_COUNT        FIXED DEC(9);      /* 入力レコード数 */
+   DCL ERR_COUNT        FIXED DEC(9);      /* エラー件数 */
+   DCL CORR_COUNT       FIXED DEC(9);      /* 補正発行件数 */
+   
+   /* ===== 処理用変数 ===== */
+   DCL CON_ID           PIC '9(10)';       /* 契約ID */
+   DCL AUD_AFTER_STS    PIC 'X(2)';        /* 監査ログ後処理状態 */
+   DCL CURR_CON_STS     PIC 'X(2)';        /* 契約マスタ現在状態 */
+   DCL CON_FOUND        PIC 'X' VALUE 'N'; /* 契約検索結果 */
+   DCL AUD_SEQ_NUM      FIXED DEC(9);      /* 補正監査シーケンス */
+   DCL WORK_LFAUDL      LIKE LFAUDL;       /* 補正用監査レコード */
+   
+   /* ===== 制御フラグ ===== */
+   DCL LFAUDL_EOF       PIC 'X' VALUE 'N'; /* LFAUDL EOF フラグ */
+   DCL LFCONF_EOF       PIC 'X' VALUE 'N'; /* LFCONF EOF フラグ */
+   DCL IO_ERROR         PIC 'X' VALUE 'N'; /* I/Oエラーフラグ */
+   
+   /* ===== エラーハンドラ登録 ===== */
+   
+   ON ENDFILE(LFAUDL_FILE) BEGIN;
+      LFAUDL_EOF = 'Y';
+   END;
+   
+   ON ENDFILE(LFCONF_FILE) BEGIN;
+      LFCONF_EOF = 'Y';
+   END;
+   
+   ON ERROR BEGIN;
+      IO_ERROR = 'Y';
+      DISPLAY 'ERROR: ファイルI/O処理でエラーが発生しました。';
+   END;
+   
+   /* ===== 初期化 ===== */
+   REC_COUNT = 0;
+   ERR_COUNT = 0;
+   CORR_COUNT = 0;
+   AUD_SEQ_NUM = 0;
+   
+   /* ===== 入力パラメータ受け取り ===== */
+   ACCEPT STRT_DATE;
+   ACCEPT END_DATE;
+   ACCEPT PROC_DATE;
+   
+   /* ===== 日付妥当性チェック ===== */
+   IF STRT_DATE > END_DATE THEN DO;
+      DISPLAY 'エラー: 開始日付が終了日付より後です。';
+      STOP RUN;
+   END;
+   
+   /* ===== ファイルオープン ===== */
+   OPEN INPUT LFAUDL_FILE;
+   OPEN INPUT LFCONF_FILE;
+   OPEN OUTPUT LFAUDL_OUT_FILE;
+   
+   /* ===== メインループ: 監査ログレコード処理 ===== */
+   DO WHILE (LFAUDL_EOF = 'N');
+      
+      READ LFAUDL_FILE INTO LFAUDL;
+      
+      IF IO_ERROR = 'Y' THEN DO;
+         DISPLAY 'ERROR: LFAUDL_FILE読込エラー';
+         EXIT;
+      END;
+      
+      REC_COUNT = REC_COUNT + 1;
+      
+      /* 対象日付範囲外は処理スキップ */
+      IF LFAUDL.AUD-DATE < STRT_DATE |
+         LFAUDL.AUD-DATE > END_DATE THEN
+         ITERATE;
+      
+      /* 契約ID・監査ログの後処理状態を取得 */
+      CON_ID = LFAUDL.CON-ID;
+      AUD_AFTER_STS = LFAUDL.AFTER-STATUS;
+      
+      /* ===== 契約マスタから現在の契約状態を検索 ===== */
+      CON_FOUND = 'N';
+      REWIND LFCONF_FILE;
+      LFCONF_EOF = 'N';
+      
+      DO WHILE (LFCONF_EOF = 'N');
+         
+         READ LFCONF_FILE INTO LFCONF;
+         
+         IF IO_ERROR = 'Y' THEN
+            EXIT;
+         
+         IF LFCONF.CON-ID = CON_ID THEN DO;
+            CURR_CON_STS = LFCONF.CON-STATUS-KBN;
+            CON_FOUND = 'Y';
+            EXIT;
+         END;
+      END;
+      
+      IO_ERROR = 'N';
+      
+      /* ===== 整合性チェック: 監査ログ状態 vs 契約マスタ現在状態 ===== */
+      
+      IF CON_FOUND = 'N' THEN DO;
+         /* 契約マスタ未検出 */
+         DISPLAY 'WARN: 契約マスタ検索不可 CON-ID=' || CON_ID;
+         ITERATE;
+      END;
+      
+      IF AUD_AFTER_STS ^= CURR_CON_STS THEN DO;
+         /* 不整合検出: 補正レコード作成・出力 */
+         
+         CORR_COUNT = CORR_COUNT + 1;
+         AUD_SEQ_NUM = AUD_SEQ_NUM + 1;
+         
+         /* 補正レコード構築 */
+         WORK_LFAUDL = LFAUDL;
+         WORK_LFAUDL.RESULT-KBN = 'ER';
+         WORK_LFAUDL.OPE-TYPE-KBN = 'AX';
+         WORK_LFAUDL.AUD-DATE = PROC_DATE;
+         WORK_LFAUDL.AUD-SEQ = AUD_SEQ_NUM;
+         WORK_LFAUDL.AFTER-STATUS = CURR_CON_STS;
+         
+         /* 補正レコード出力 */
+         WRITE LFAUDL_OUT_FILE FROM WORK_LFAUDL;
+         
+         IF IO_ERROR = 'Y' THEN DO;
+            ERR_COUNT = ERR_COUNT + 1;
+            IO_ERROR = 'N';
+            ITERATE;
+         END;
+         
+         /* pmaudgen 呼出: 整合状態を監査ログに再記録 */
+         CALL pmaudgen (
+            CON_ID,
+            CURR_CON_STS,
+            PROC_DATE,
+            'AX'
+         );
+         
+      END;  /* 不整合検出ブロック終了 */
+      
+   END;  /* メインループ終了 */
+   
+   /* ===== ファイルクローズ ===== */
+   CLOSE LFAUDL_FILE;
+   CLOSE LFCONF_FILE;
+   CLOSE LFAUDL_OUT_FILE;
+   
+   /* ===== 処理結果レポート ===== */
+   DISPLAY ' ';
+   DISPLAY '===== 監査整合性チェック実行結果 =====';
+   DISPLAY '処理日付: ' || PROC_DATE;
+   DISPLAY '入力レコード数: ' || REC_COUNT;
+   DISPLAY '補正発行件数: ' || CORR_COUNT;
+   DISPLAY '処理エラー件数: ' || ERR_COUNT;
+   DISPLAY '====================================';
+   DISPLAY ' ';
+   
+   /* ===== 終了処理 ===== */
+   IF ERR_COUNT > 0 THEN
+      STOP RUN WITH ERROR;
+   ELSE
+      STOP RUN;
+      
+END PMAUDCHK;
